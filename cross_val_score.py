@@ -12,7 +12,7 @@ from sklearn.metrics import confusion_matrix, classification_report, mean_absolu
 from sklearn.model_selection import train_test_split, KFold
 
 
-def cross_validate_models(model_configurations, scaler_configs, dataset, target_column, cv=5, fit_scaler=True):
+def cross_validate_models(model_configurations, scaler_configs, dataset, target_column, cv=5, fit_scaler=True, scoring_type="accuracy"):
     """
     Performs cross-validation on a dataset, evaluating a set of machine learning models 
     with different scaling/preprocessing methods.
@@ -71,19 +71,52 @@ def cross_validate_models(model_configurations, scaler_configs, dataset, target_
             for model_config in model_configurations:
                 model_class = model_config['model_class']
                 # Extract optional parameters (those keys not reserved for meta-information)
-                model_params = {k: v for k, v in model_config.items() if k not in ['model_class', 'class_name']}
+                model_params = {k: v for k, v in model_config.items() 
+                                if k not in ['model_class', 'class_name', 'param_grid', 'parameter_range']}
+                if 'param_grid' in model_config and 'parameter_range' in model_config:
+                    tuning_param = model_config['param_grid']
+                    best_accuracy = -np.inf
+                    best_model_params = None
+                    
+                    # Loop over the range of values for tuning
+                    for param_value in model_config['parameter_range']:
+                        current_params = model_params.copy()
+                        
+                        # Set the tuning parameter to the current value
+                        current_params[tuning_param] = param_value
+                        model = model_class(**current_params)
+                        model.fit(X_train_scaled, y_train)
+                        y_pred = model.predict(X_test_scaled)
+                        accuracy = np.mean(y_pred == y_test)
+                        
+                        if accuracy > best_accuracy:
+                            best_accuracy = accuracy
+                            best_model_params = current_params.copy()
+                    
+                    # Define the model identifier that includes the tuned parameter value
+                    model_identifier = f"{model_config['class_name']}_{scaler_name}"
+                    # Append results from the best tuned parameter for this fold
+                    score_record = {
+                        "Model_Scaler": model_identifier,
+                        "Scoring": best_accuracy,
+                        "Parameters": best_model_params
+                    }
+                    scores.append(score_record)
                 
-                model = model_class(**model_params)
-                model.fit(X_train_scaled, y_train)
-                y_pred = model.predict(X_test_scaled)
-                
-                accuracy = np.mean(y_pred == y_test)
-                score_record = {
-                    "Model_Scaler": f"{model_config['class_name']}_{scaler_name}",
-                    "Accuracy": accuracy,
-                    "Parameters": model_params
-                }
-                scores.append(score_record)
+                else:
+                    # No tuning; use base parameters
+                    model = model_class(**model_params)
+                    model.fit(X_train_scaled, y_train)
+                    y_pred = model.predict(X_test_scaled)
+                    
+                    accuracy = np.mean(y_pred == y_test)
+                    model_identifier = f"{model_config['class_name']}_{scaler_name}"
+                    score_record = {
+                        "Model_Scaler": model_identifier,
+                        "Scoring": accuracy,
+                        "Parameters": model_params
+                    }
+                    scores.append(score_record)
         fold += 1
         
     df_scores = pd.DataFrame(scores)
@@ -102,10 +135,25 @@ df_train = pd.read_csv(os.path.join(current_dir, 'credtrain.txt'), sep='\t', hea
 df_train.columns = column_names
 
 # Define model configurations
+# Define model configurations; for models that require parameter tuning, include tuning keys:
 model_configurations = [
-    {'class_name': "KNeighborsClassifier", 'model_class': KNeighborsClassifier, 'n_neighbors': 5},
-    {'class_name': "LogisticRegression", 'model_class': LogisticRegression},
-    {'class_name': "GradientBoostingClassifier", 'model_class': GradientBoostingClassifier, 'n_estimators': 100, 'random_state': 42}
+    {
+        'class_name': "KNeighborsClassifier", 
+        'model_class': KNeighborsClassifier, 
+        'param_grid': 'n_neighbors', 
+        'parameter_range': list(range(1, 40 , 2))
+    },
+    {
+        'class_name': "LogisticRegression", 
+        'model_class': LogisticRegression
+    },
+    {
+        'class_name': "GradientBoostingClassifier", 
+        'model_class': GradientBoostingClassifier, 
+        'param_grid': 'n_estimators',
+        'parameter_range': list(range(50, 151, 10)),
+        'random_state': 42
+    }
 ]
 
 # Define scaler configurations
@@ -118,30 +166,31 @@ scaler_configs = [
 # Use df_train as the training dataset
 train_dataset = df_train.copy()
 target = 'CLASSE'
+scoring_type = 'accuracy'
 
 # Get cross-validation scores
-df_scores = cross_validate_models(model_configurations, scaler_configs, train_dataset, target, cv=5, fit_scaler=True)
+df_scores = cross_validate_models(model_configurations, scaler_configs, train_dataset, target, cv=5, fit_scaler=True, scoring_type=scoring_type)
 
 # Aggregate scores by 'Model_Scaler'
-score_summary = df_scores.groupby('Model_Scaler').agg({'Accuracy': ['mean', 'std']}).reset_index()
+score_summary = df_scores.groupby('Model_Scaler').agg({'Scoring': ['mean', 'std']}).reset_index()
 
 # Display aggregated scores
 for _, row in score_summary.iterrows():
     model_scaler = row['Model_Scaler']
-    mean_acc = row["Accuracy"]['mean']
-    std_acc = row["Accuracy"]['std']
+    mean_acc = row["Scoring"]['mean']
+    std_acc = row["Scoring"]['std']
     print(f"Model Scaler: {model_scaler}")
-    print(f"  Average Accuracy: {mean_acc:.4f}")
-    print(f"  Accuracy Std Dev: {std_acc:.4f}")
+    print(f"  Average Scoring: {mean_acc:.4f}")
+    print(f"  Scoring Std Dev: {std_acc:.4f}")
     print("-" * 40)
 
 # (Optional) Determine and print the best performing configuration
-best_config = score_summary.loc[score_summary[("Accuracy", "mean")].idxmax()]
+best_config = score_summary.loc[score_summary[("Scoring", "mean")].idxmax()]
 print("Best performing configuration:")
 print(best_config)
 
 
-set_model = score_summary[score_summary["Accuracy"]['mean'] == score_summary["Accuracy"]['mean'].max()]["Model_Scaler"].to_list()[0]
+set_model = score_summary[score_summary["Scoring"]['mean'] == score_summary["Scoring"]['mean'].max()]["Model_Scaler"].to_list()[0]
 
 model_configurations_name = set_model.split("_")[0]
 scaler_configs_name = set_model.split("_")[1]
