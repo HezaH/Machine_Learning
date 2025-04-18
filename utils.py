@@ -1,30 +1,182 @@
-import os
 import numpy as np
-import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-
-from sklearn.preprocessing import MinMaxScaler, StandardScaler, RobustScaler, LabelEncoder, OneHotEncoder
-from sklearn.linear_model import LogisticRegression
-from sklearn.neighbors import KNeighborsRegressor
-from sklearn.ensemble import GradientBoostingRegressor
+import pandas as pd
 from sklearn.metrics import (confusion_matrix, classification_report,
                              mean_absolute_error, mean_squared_error, f1_score,
                              precision_score, recall_score)
-from sklearn.model_selection import train_test_split, KFold
+from sklearn.model_selection import KFold
+
+# ===========================
+# MÉTRICAS E AVALIAÇÕES
+# ===========================
+
+def calculate_metrics(tn, fp, fn, tp):
+    sensitivity = tp / (tp + fn) if (tp + fn) > 0 else 0
+    specificity = tn / (tn + fp) if (tn + fp) > 0 else 0
+    precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+    f1 = 2 * (precision * sensitivity) / (precision + sensitivity) if (precision + sensitivity) > 0 else 0
+    accuracy = (tp + tn) / (tp + tn + fp + fn)
+
+    return {
+        'Sensitivity (TPR)': sensitivity,
+        'Specificity (TNR)': specificity,
+        'Precision': precision,
+        'F1 Score': f1,
+        'Accuracy': accuracy,
+        'TP': tp, 
+        'FP': fp, 
+        'TN': tn, 
+        'FN': fn
+    }
+
+def find_optimal_cost_threshold(y_true, y_scores, cost_ratio, thresholds=None):
+    if thresholds is None:
+        evaluated_thresholds = np.linspace(0.01, 0.99, 100)
+    else:
+        evaluated_thresholds = thresholds
+
+    total_costs = []
+    n_samples = len(y_true)
+    n_pos = np.sum(y_true)
+    n_neg = n_samples - n_pos
+
+    best_confusion_matrix = None
+
+    for threshold in evaluated_thresholds:
+        y_pred = (y_scores >= threshold).astype(int)
+        tn, fp, fn, tp = confusion_matrix(y_true, y_pred).ravel()
+        confusion_matrix_current = np.array([[tn, fp], [fn, tp]])
+
+        cost_fp = fp / n_neg if n_neg > 0 else 0
+        cost_fn = fn / n_pos if n_pos > 0 else 0
+        total_cost = cost_fp + cost_ratio * cost_fn
+
+        total_costs.append(total_cost)
+
+        if total_cost == min(total_costs):
+            best_confusion_matrix = confusion_matrix_current
+
+    optimal_idx = np.argmin(total_costs)
+    optimal_threshold = evaluated_thresholds[optimal_idx]
+
+    return optimal_threshold, np.array(total_costs), evaluated_thresholds, best_confusion_matrix
+
+def find_closest_threshold_idx(thresholds, target_threshold):
+    return np.abs(thresholds - target_threshold).argmin()
+
+def plot_confusion_matrices(conf_matrix, cost_scenarios, optimal_thresholds, method):
+    fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+    axes = axes.flatten()
+
+    for i, (name, cost_ratio) in enumerate(cost_scenarios.items()):
+        if i >= len(axes):
+            break
+
+        threshold = optimal_thresholds[name]["threshold"]
+        cm = conf_matrix
+
+        cm_norm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+
+        im = axes[i].imshow(cm, interpolation='nearest', cmap=plt.cm.Blues)
+        axes[i].set_title(f"{method} - {name}\nThreshold = {threshold:.3f}")
+        axes[i].set_xticks([0, 1])
+        axes[i].set_yticks([0, 1])
+        axes[i].set_xticklabels(['Negative', 'Positive'])
+        axes[i].set_yticklabels(['Negative', 'Positive'])
+        axes[i].set_xlabel('Predicted')
+        axes[i].set_ylabel('Actual')
+
+        for r in range(2):
+            for c in range(2):
+                axes[i].text(c, r, f"{cm[r, c]}\n({cm_norm[r, c]:.2%})",
+                             ha="center", va="center",
+                             color="white" if cm[r, c] > cm.max()/2 else "black")
+
+    for j in range(i + 1, len(axes)):
+        axes[j].axis('off')
+
+    plt.tight_layout()
+    return fig
+
+def regressor_plot(y_test, y_pred, title):
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
+
+    # 1. Predicted vs Actual
+    ax1.scatter(y_test, y_pred)
+    ax1.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'r--')
+    ax1.set_xlabel("Actual")
+    ax1.set_ylabel("Predicted")
+    ax1.set_title(f"{title} - Predicted vs Actual")
+    ax1.grid(True)
+
+    # 2. Residuals Plot
+    residuals = y_test - y_pred
+    ax2.scatter(y_pred, residuals)
+    ax2.axhline(0, color='red', linestyle='--')
+    ax2.set_xlabel("Predicted")
+    ax2.set_ylabel("Residuals")
+    ax2.set_title(f"{title} - Residual Plot")
+    ax2.grid(True)
+
+    plt.tight_layout()
+    plt.show()
 
 
 #função para criar a matriz de confusão e relatório de classificação
 def MatConf(verdadeiros, previstos, titulo, rotulos_x = "AxisX", rotulos_y = "AxisY"):
-  conf_matrix =  confusion_matrix(verdadeiros, previstos,  normalize="true")
+  conf_matrix = confusion_matrix(verdadeiros, previstos,  normalize="true")
   s = sns.heatmap(conf_matrix, annot=True, cmap="Greens",
               xticklabels=rotulos_x, yticklabels=rotulos_y)
   s.set(xlabel = "Rótulo Previsto", ylabel="Rótulo Verdadeiro", title=titulo)
-#   plt.show()
+#   ax2.show()
   print(classification_report(verdadeiros, previstos))
 
+def preprocess_data(scaler, df_train, df_test, target_column, fit=True):
+        # Drop target column and scale features
+        if fit:
+            X_train = scaler.fit_transform(df_train.drop(target_column, axis=1))
+            X_test  = scaler.transform(df_test.drop(target_column, axis=1))
+        else:
+            X_train = scaler.transform(df_train.drop(target_column, axis=1))
+            X_test  = scaler.transform(df_test.drop(target_column, axis=1))
+        y_train = df_train[target_column]
+        y_test  = df_test[target_column]
+        return X_train, X_test, y_train, y_test
+  
 
-def cross_validate_models(model_configurations, scaler_configs, dataset, target_column, cv=5,
+def pipeline_model(spling_configs, clf, X_train, y_train, X_test, y_test):
+    
+    for config in spling_configs:
+        name = config['spling_name']
+        method = config['spling_class']
+        
+        print(f"\n--- Método: {name} ---")
+        
+        if name == "Threshold":
+            # Treina o modelo com dados normais
+            clf.fit(X_train, y_train)
+            probs = clf.predict_proba(X_test)[:, 1]
+
+            for thresh in method:
+                y_pred = (probs >= thresh).astype(int)
+                print(f"\nLimiar: {thresh:.2f}")
+               
+        
+        elif name == "WithOut":
+            y_pred = clf.predict(X_test)
+
+        else:
+            # Aplica técnica de balanceamento
+            X_resampled, y_resampled = method.fit_resample(X_train, y_train)
+
+            
+            clf.fit(X_resampled, y_resampled)
+            y_pred = clf.predict(X_test)
+
+        print(classification_report(y_test, y_pred))
+
+def cross_validate_models(model_configurations, scaler_configs, spling_configs, dataset, target_column, cv=5,
                           fit_scaler=True, scoring_type="accuracy"):
     """
     Performs cross-validation on a dataset, evaluating a set of machine learning models
@@ -54,18 +206,6 @@ def cross_validate_models(model_configurations, scaler_configs, dataset, target_
     Returns:
         pd.DataFrame: DataFrame containing aggregated scores and evaluation metrics for each model/scaler combination.
     """
-
-    def preprocess_data(scaler, df_train, df_test, target_column, fit=True):
-        # Drop target column and scale features
-        if fit:
-            X_train = scaler.fit_transform(df_train.drop(target_column, axis=1))
-            X_test  = scaler.transform(df_test.drop(target_column, axis=1))
-        else:
-            X_train = scaler.transform(df_train.drop(target_column, axis=1))
-            X_test  = scaler.transform(df_test.drop(target_column, axis=1))
-        y_train = df_train[target_column]
-        y_test  = df_test[target_column]
-        return X_train, X_test, y_train, y_test
 
     def compute_scoring(y_true, y_pred, scoring_type):
         """
@@ -105,7 +245,7 @@ def cross_validate_models(model_configurations, scaler_configs, dataset, target_
                 # Extract base parameters (excluding meta keys)
                 base_model_params = {k: v for k, v in model_config.items()
                                      if k not in ['model_class', 'class_name', 'tuning_parameter', 'parameter_range']}
-
+                
                 # Check if tuning is specified for this model.
                 if 'tuning_parameter' in model_config and 'parameter_range' in model_config:
                     tuning_param = model_config['tuning_parameter']
@@ -113,18 +253,18 @@ def cross_validate_models(model_configurations, scaler_configs, dataset, target_
                     best_model_params = None
                     best_evaluation = {}  # To store all evaluation metrics from the best parameter
                     # Loop over the range of parameter values
-                    for param_value in model_config['parameter_range']:
+                    for param_testue in model_config['parameter_range']:
                         current_params = base_model_params.copy()
-                        current_params[tuning_param] = param_value
+                        current_params[tuning_param] = param_testue
                         model = model_class(**current_params)
-                        model.fit(X_train_scaled, y_train)
-                        y_pred = model.predict(X_test_scaled)
-
-                        score_value = compute_scoring(y_test, y_pred, scoring_type)
+                        
+                        y_pred = pipeline_model(spling_configs, model, X_train_scaled, y_train, X_test_scaled, y_test)
+                        
+                        score_testue = compute_scoring(y_test, y_pred, scoring_type)
 
                         # If this configuration gives a better score, save it
-                        if score_value > best_score:
-                            best_score = score_value
+                        if score_testue > best_score:
+                            best_score = score_testue
                             best_model_params = current_params.copy()
                             # Compute additional metrics for the best configuration
                             if "Regressor" in model_class_name:
@@ -141,6 +281,7 @@ def cross_validate_models(model_configurations, scaler_configs, dataset, target_
                                     "RMSE": np.sqrt(mean_squared_error(y_test, y_pred))
                                 }
                                 MatConf(y_test_cat, y_pred_cat, f"{model_class_name}_{scaler_name}")
+                                regressor_plot(y_test, y_pred, f"{model_class_name}_{scaler_name}")
                             else:
                                 best_evaluation = {
                                     "Confusion_Matrix": confusion_matrix(y_test, y_pred).tolist(),
@@ -151,7 +292,7 @@ def cross_validate_models(model_configurations, scaler_configs, dataset, target_
                                 }
                                 MatConf(y_test, y_pred, f"{model_class_name}_{scaler_name}")
 
-                    model_identifier = f"{model_class_name}_{scaler_name}_{tuning_param}={param_value}"
+                    model_identifier = f"{model_class_name}_{scaler_name}_{tuning_param}={param_testue}"
                     score_record = {
                         "Model_Scaler": f"{model_class_name}_{scaler_name}",
                         "Scoring": best_score,
@@ -165,9 +306,10 @@ def cross_validate_models(model_configurations, scaler_configs, dataset, target_
                     model.fit(X_train_scaled, y_train)
                     y_pred = model.predict(X_test_scaled)
 
+                    
                     MatConf(y_test, y_pred, f"{model_class_name}_{scaler_name}")
 
-                    score_value = compute_scoring(y_test, y_pred, scoring_type)
+                    score_testue = compute_scoring(y_test, y_pred, scoring_type)
                     evaluation_metrics = {
                         "Confusion_Matrix": confusion_matrix(y_test, y_pred).tolist(),
                         "Classification_Report": classification_report(y_test, y_pred, output_dict=True),
@@ -179,99 +321,14 @@ def cross_validate_models(model_configurations, scaler_configs, dataset, target_
                     model_identifier = f"{model_class_name}_{scaler_name}"
                     score_record = {
                         "Model_Scaler": model_identifier,
-                        "Scoring": score_value,
+                        "Scoring": score_testue,
                         "Parameters": base_model_params,
                         "Evaluation": evaluation_metrics
                     }
                     scores.append(score_record)
         fold += 1
-
+    
     df_scores = pd.DataFrame(scores)
+    
     return df_scores
 
-current_dir = os.path.dirname(os.path.realpath(__file__))
-df_diamonds = pd.read_csv(os.path.join(current_dir,'diamonds.csv'))
-
-
-df_diamonds.head()
-columns = ['cut', 'color', 'clarity']
-dict_unique = {}
-for c in columns:
-    dict_unique[c] = df_diamonds[c].unique()
-print(dict_unique)
-
-
-#To colum cut I will assing 0 at 5 by each value on the column
-df_diamonds['cut'] = df_diamonds['cut'].map({'Fair': 0, 'Good': 1, 'Very Good': 2, 'Premium': 3, 'Ideal': 4})
-
-#Other way could be to use LabelEncoder from sklearn
-# le = LabelEncoder()
-# df_diamonds['cut_modify']  = le.fit_transform(df_diamonds['cut'] )
-
-#To others columns with objects values, to not introduced the articial values
-# df_base = pd.DataFrame()
-for col in columns[1:]:
-    # Starting the OneHotEncoder
-    encoder = OneHotEncoder(sparse_output=False)
-
-    # Applying OneHotEncoder
-    encoded_data = encoder.fit_transform(df_diamonds[[col]])
-
-    # Converting the encoded data to a DataFrame
-    encoded_df = pd.DataFrame(encoded_data, columns=encoder.get_feature_names_out([col]))
-
-    # Concatenating the encoded DataFrame with the original DataFrame
-    df_diamonds = pd.concat([df_diamonds, encoded_df], axis=1)
-
-df_diamonds_done = df_diamonds.drop(columns=columns[1:], axis=1)
-
-target = 'price'
-X = df_diamonds_done.drop(target, axis=1)
-y = df_diamonds_done[target]
-
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-
-
-# Define model configurations; include tuning keys for models that require parameter tuning.
-model_configurations = [
-    {
-        'class_name': "KNeighborsRegressor",
-        'model_class': KNeighborsRegressor,
-        'tuning_parameter': 'n_neighbors',
-        'parameter_range': list(range(5, 10, 5))
-    },
-    {
-        'class_name': "LogisticRegression",
-        'model_class': LogisticRegression
-    },
-    {
-        'class_name': "GradientBoostingRegressor",
-        'model_class': GradientBoostingRegressor,
-        'tuning_parameter': 'n_estimators',
-        'parameter_range': list(range(50, 100, 50)),
-        'random_state': 42
-    }
-]
-
-# Define scaler configurations
-scaler_configs = [
-    {"scaler_name": "MinMaxScaler", 'scaler_class': MinMaxScaler},
-    # {"scaler_name": "StandardScaler", 'scaler_class': StandardScaler},
-    # {"scaler_name": "RobustScaler", 'scaler_class': RobustScaler}
-]
-
-# Get cross-validation scores with additional evaluation metrics
-scoring_type = 'accuracy'  # Or 'f1', 'precision', 'recall'
-# Certifique-se de que y_train seja um DataFrame com um nome de coluna
-if isinstance(y_train, pd.Series):
-    y_train = y_train.to_frame(name=target)
-
-# Redefina os índices para garantir que sejam únicos e alinhados
-X_train = X_train.reset_index(drop=True)
-y_train = y_train.reset_index(drop=True)
-
-# Concatene horizontalmente
-data_set_train = pd.concat([X_train, y_train], axis=1)
-df_scores = cross_validate_models(model_configurations, scaler_configs, data_set_train, target, cv=5, fit_scaler=True, scoring_type=scoring_type)
-
-x = 1
