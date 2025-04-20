@@ -205,16 +205,16 @@ def MatConf(verdadeiros, previstos, titulo, rotulos_x="AxisX", rotulos_y="AxisY"
     plt.show()
 
 def preprocess_data(scaler, df_train, df_test, target_column, fit=True):
-        # Drop target column and scale features
-        if fit:
-            X_train = scaler.fit_transform(df_train.drop(target_column, axis=1))
-            X_test  = scaler.transform(df_test.drop(target_column, axis=1))
-        else:
-            X_train = scaler.transform(df_train.drop(target_column, axis=1))
-            X_test  = scaler.transform(df_test.drop(target_column, axis=1))
-        y_train = df_train[target_column]
-        y_test  = df_test[target_column]
-        return X_train, X_test, y_train, y_test
+    # Drop target column and scale features
+    if fit:
+        X_train = scaler.fit_transform(df_train.drop(target_column, axis=1))
+        X_test  = scaler.transform(df_test.drop(target_column, axis=1))
+    else:
+        X_train = scaler.transform(df_train.drop(target_column, axis=1))
+        X_test  = scaler.transform(df_test.drop(target_column, axis=1))
+    y_train = df_train[target_column]
+    y_test  = df_test[target_column]
+    return X_train, X_test, y_train, y_test
 
 def get_model_scores(model, scaler, df_train, df_test, target_column='target'):
     """
@@ -237,9 +237,14 @@ def get_model_scores(model, scaler, df_train, df_test, target_column='target'):
     )
     model.fit(X_train, y_train)
     if hasattr(model, "predict_proba"):
+        # Se o modelo tem predict_proba, usamos para obter scores (ex.: classificadores)
         y_scores = model.predict_proba(X_test)[:, 1]
-    else:
+    elif hasattr(model, "decision_function"):
+        # Se tiver decision_function, usamos ele
         y_scores = model.decision_function(X_test)
+    else:
+        # Para outros modelos, como os de regressão, usamos predict
+        y_scores = model.predict(X_test)
     return y_scores, y_test
 
 def pipeline_model(spling_configs, clf, X_train, y_train, X_test, y_test):

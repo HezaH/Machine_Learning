@@ -2,15 +2,19 @@ import os
 import numpy as np
 import pandas as pd
 import math
+import matplotlib.pyplot as plt
+import seaborn as sns
 from sklearn.preprocessing import MinMaxScaler, StandardScaler, RobustScaler, LabelEncoder, OneHotEncoder
 from sklearn.linear_model import LogisticRegression
 from sklearn.neighbors import KNeighborsRegressor
 from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.model_selection import train_test_split
-
+from sklearn.metrics import ( mean_absolute_error, mean_squared_error, r2_score,
+                             accuracy_score, precision_score, recall_score, f1_score, roc_auc_score, log_loss, confusion_matrix
+                             )
 from utils import (
-    calculate_metrics, find_optimal_cost_threshold, cross_validate_models)
-
+    get_model_scores, preprocess_data)
+import os
 
 current_dir = os.path.dirname(os.path.realpath(__file__))
 df_diamonds = pd.read_csv(os.path.join(current_dir,'diamonds.csv'))
@@ -26,10 +30,6 @@ print(dict_unique)
 
 #To colum cut I will assing 0 at 5 by each value on the column
 df_diamonds['cut'] = df_diamonds['cut'].map({'Fair': 0, 'Good': 1, 'Very Good': 2, 'Premium': 3, 'Ideal': 4})
-
-#Other way could be to use LabelEncoder from sklearn
-# le = LabelEncoder()
-# df_diamonds['cut_modify']  = le.fit_transform(df_diamonds['cut'] )
 
 #To others columns with objects values, to not introduced the articial values
 # df_base = pd.DataFrame()
@@ -48,12 +48,23 @@ for col in columns[1:]:
 
 df_diamonds_done = df_diamonds.drop(columns=columns[1:], axis=1)
 
-target = 'price'
-X = df_diamonds_done.drop(target, axis=1)
-y = df_diamonds_done[target]
+target_column = 'price'
+X = df_diamonds_done.drop(target_column, axis=1)
+y = df_diamonds_done[target_column]
 
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+df_train = pd.DataFrame(X_train, columns=X.columns)
+df_train[target_column] = y_train
 
+df_test = pd.DataFrame(X_test, columns=X.columns)
+df_test[target_column] = y_test
+
+X_train_split, X_val, y_train_split, y_val = train_test_split(X_train, y_train, test_size=0.4, random_state=42)
+df_train_split = pd.DataFrame(X_train_split, columns=X.columns)
+df_train_split[target_column] = y_train_split
+
+df_val = pd.DataFrame(X_val, columns=X.columns)
+df_val[target_column] = y_val
 
 # Define model configurations; include tuning keys for models that require parameter tuning.
 model_configurations = [
@@ -85,54 +96,92 @@ scaler_configs = [
     # {"scaler_name": "RobustScaler", 'scaler_class': RobustScaler}
 ]
 
-#Spling the data into train and test sets
-spling_configs = [
-    {"spling_name": "WithOut", 'spling_class': None},
-]
+results = []
+# Loop principal
+for model_config in model_configurations:
+    model_class_name = model_config['class_name']
+    model_class = model_config['model_class']
 
-# Get cross-validation scores with additional evaluation metrics
-scoring_type = 'accuracy'  # Or 'f1', 'precision', 'recall'
-# Certifique-se de que y_train seja um DataFrame com um nome de coluna
-if isinstance(y_train, pd.Series):
-    y_train = y_train.to_frame(name=target)
+    # Listas para armazenar dados das curvas ROC
+    roc_data = []
 
-# Redefina os índices para garantir que sejam únicos e alinhados
-X_train = X_train.reset_index(drop=True)
-y_train = y_train.reset_index(drop=True)
+    for scaler_config in scaler_configs:
+        scaler_name = scaler_config['scaler_name']
+        scaler_class = scaler_config['scaler_class']
+        set_name = f"{model_class_name}_{scaler_name}"
+        
+        # Extract base parameters (excluding meta keys)
+        base_model_params = {k: v for k, v in model_config.items()
+                                if k not in ['model_class', 'class_name', 'tuning_parameter', 'parameter_range']}
+        
+        print(f"\nRodando: Modelo={model_class_name}, Scaler={scaler_name}")
 
-# Concatene horizontalmente
-data_set_train = pd.concat([X_train, y_train], axis=1)
+        # Instanciar scaler e modelo
+        scaler = scaler_class()
+        model = model_class(**base_model_params)
+    
+        # Obter scores e rótulos de validação
+        y_val_pred, y_val_true = get_model_scores(model, scaler, df_train_split, df_val, target_column=target_column)
 
-#Split the data set into n_partes
-n_partes = math.ceil(len(X_train)/len(X_test))
-tamanho = len(data_set_train) // n_partes
+        #Pré-processar o conjunto de teste usando o scaler ajustado:
+        # Supondo que df_train_split seja o conjunto de treino utilizado para ajustar o scaler
+        _, X_test_processed, _, y_test_processed = preprocess_data(scaler, df_train, df_test, target_column, fit=False)
+                
+        # Gerar as predições para o conjunto de teste
+        y_pred = model.predict(X_test_processed)
 
-data_set_train["grupo"] = 0
+        if "Regressor" in model_class_name:
+            mae = mean_absolute_error(y_test, y_pred)
+            mse = mean_squared_error(y_test, y_pred)
+            rmse = np.sqrt(mse)
+            r2 = r2_score(y_test, y_pred)
+        else:
+            accuracy = accuracy_score(y_test, y_pred)
+            precision = precision_score(y_test, y_pred, average='weighted')
+            recall = recall_score(y_test, y_pred, average='weighted')
+            f1 = f1_score(y_test, y_pred, average='weighted')
+            # Se utilizar predict_proba para obter probabilidades, pode calcular:
+            roc_auc = roc_auc_score(y_test, model.predict_proba(X_test)[:, 1])
+            loss = log_loss(y_test, model.predict_proba(X_test)[:, 1])
+            cm = confusion_matrix(y_test, y_pred)
+            
+            # 1. Predicted vs Actual
+            plt.figure(figsize=(6, 4))
+            plt.scatter(y_test_processed, y_pred)
+            plt.plot([y_test_processed.min(), y_test_processed.max()], [y_test_processed.min(), y_test_processed.max()], 'r--')
+            plt.xlabel("Actual")
+            plt.ylabel("Predicted")
+            plt.title("Predicted vs Actual")
+            plt.grid(True)
+            plt.show()
 
-for i in range(n_partes - 1):
-    data_set_train.iloc[i*tamanho:(i+1)*tamanho, -1] = i  # última coluna é 'grupo'
-data_set_train.iloc[(n_partes - 1)*tamanho:, -1] = n_partes - 1
+            # 2. Residuals Plot
+            residuals = y_test_processed - y_pred
+            plt.figure(figsize=(6, 4))
+            plt.scatter(y_pred, residuals)
+            plt.axhline(0, color='red', linestyle='--')
+            plt.xlabel("Predicted")
+            plt.ylabel("Residuals")
+            plt.title("Residual Plot")
+            plt.grid(True)
+            plt.show()
 
-data_set_train_splited = data_set_train
+        results.append({
+            "Model": set_name,
+            "accuracy": accuracy if "Regressor" not in model_class_name else None,
+            "precision": precision if "Regressor" not in model_class_name else None,
+            "recall": recall if "Regressor" not in model_class_name else None,
+            "f1": f1 if "Regressor" not in model_class_name else None,
+            "roc_auc": roc_auc if "Regressor" not in model_class_name else None,
+            "loss": loss if "Regressor" not in model_class_name else None,
+            "cm": cm if "Regressor" not in model_class_name else None,
+            "MAE": mae if "Regressor" in model_class_name else None,
+            "MSE": mse if "Regressor" in model_class_name else None,
+            "RMSE": rmse if "Regressor" in model_class_name else None,
+            "R2": r2 if "Regressor" in model_class_name else None,})
+        
 
-df_scores = cross_validate_models(model_configurations, scaler_configs, spling_configs, data_set_train_splited, target, cv=2, fit_scaler=True, scoring_type=scoring_type)
+df_res = pd.DataFrame(results)
 
-# Aggregate scores by 'Model_Scaler'
-score_summary = df_scores.groupby('Model_Scaler').agg({'Scoring': ['mean', 'std']}).reset_index()
 
-# Print aggregated results
-for _, row in score_summary.iterrows():
-    model_scaler = row['Model_Scaler']
-    mean_acc = row["Scoring"]['mean']
-    std_acc = row["Scoring"]['std']
-    print(f"Model Scaler: {model_scaler}")
-    print(f"  Average Scoring: {mean_acc:.4f}")
-    print(f"  Scoring Std Dev: {std_acc:.4f}")
-    print("-" * 40)
 
-# Optionally, determine and print the best performing configuration
-best_config = score_summary.loc[score_summary[("Scoring", "mean")].idxmax()]
-print("Best performing configuration:")
-print(best_config)
-
-x = 1
