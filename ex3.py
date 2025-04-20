@@ -99,7 +99,7 @@ for model_config in model_configurations:
                       f"Parâmetro={model_config['tuning_parameter']}={param}, "
                       f"Scaler={scaler_config['scaler_name']}, "
                       f"Spling={spling_config['spling_name']}")
-                set_name = f"{model_class_name}_{model_config['tuning_parameter']}_{param}_{scaler_name}_{spling_name}"
+                set_name = f"{model_class_name}&{model_config['tuning_parameter']}&{param}&{scaler_name}&{spling_name}"
                 # Instanciar scaler
                 scaler = scaler_config['scaler_class']()
 
@@ -130,19 +130,25 @@ for model_config in model_configurations:
                             'scaling': scaler_config['scaler_name'],
                             "threshold": threshold,
                             "Confusion_Matrix": cm,
+                            "Tp": cm[0][0],
+                            "Fp": cm[0][1],
+                            "Fn": cm[1][0],
+                            "Tn": cm[1][1],
                             "Classification_Report": classification_report(y_val, y_pred, output_dict=True),
                             "MAE": mean_absolute_error(y_val, y_pred),
                             "MSE": mean_squared_error(y_val, y_pred),
-                            "RMSE": np.sqrt(mean_squared_error(y_val, y_pred))
+                            "RMSE": np.sqrt(mean_squared_error(y_val, y_pred)),
+                            "Y": y_val,
+                            "YPred": y_pred
                         })
 
-                        plot_confusion_matrix(
-                            y_true=y_val,
-                            y_pred=y_pred,
-                            model_name=set_name,
-                            labels=["Negative", "Positive"],
-                            normalize=False,
-                            cm = cm)
+                        # plot_confusion_matrix(
+                        #     y_true=y_val,
+                        #     y_pred=y_pred,
+                        #     model_name=set_name,
+                        #     labels=["Negative", "Positive"],
+                        #     normalize=False,
+                        #     cm = cm)
 
                 elif spling_config['spling_name'] != "WithOut":
                     X_resampled, y_resampled = spling_config['spling_class'].fit_resample(X_tr, y_tr)
@@ -162,19 +168,25 @@ for model_config in model_configurations:
                         'scaler': scaler_config['scaler_name'],
                         "threshold": None,
                         "Confusion_Matrix": cm,
+                        "Tp": cm[0][0],
+                        "Fp": cm[0][1],
+                        "Fn": cm[1][0],
+                        "Tn": cm[1][1],
                         "Classification_Report": classification_report(y_val, y_pred, output_dict=True),
                         "MAE": mean_absolute_error(y_val, y_pred),
                         "MSE": mean_squared_error(y_val, y_pred),
-                        "RMSE": np.sqrt(mean_squared_error(y_val, y_pred))
+                        "RMSE": np.sqrt(mean_squared_error(y_val, y_pred)),
+                        "Y": y_val,
+                        "YPred": y_pred
                     })
 
-                    plot_confusion_matrix(
-                        y_true=y_val,
-                        y_pred=y_pred,
-                        model_name=set_name,
-                        labels=["Negative", "Positive"],
-                        normalize=False,
-                        cm = cm)
+                    # plot_confusion_matrix(
+                    #     y_true=y_val,
+                    #     y_pred=y_pred,
+                    #     model_name=set_name,
+                    #     labels=["Negative", "Positive"],
+                    #     normalize=False,
+                    #     cm = cm)
 
                 else:
                     # Caso sem balanceamento
@@ -192,70 +204,50 @@ for model_config in model_configurations:
                         'scaler': scaler_config['scaler_name'],
                         "threshold": None,
                         "Confusion_Matrix": cm,
+                        "Tp": cm[0][0],
+                        "Fp": cm[0][1],
+                        "Fn": cm[1][0],
+                        "Tn": cm[1][1],
                         "Classification_Report": classification_report(y_val, y_pred, output_dict=True),
                         "MAE": mean_absolute_error(y_val, y_pred),
                         "MSE": mean_squared_error(y_val, y_pred),
-                        "RMSE": np.sqrt(mean_squared_error(y_val, y_pred))
+                        "RMSE": np.sqrt(mean_squared_error(y_val, y_pred)
+                                        ),
+                        "Y": y_val,
+                        "YPred": y_pred
                     })
 
-                    plot_confusion_matrix(
-                        y_true=y_val,
-                        y_pred=y_pred,
-                        model_name=set_name,
-                        labels=["Negative", "Positive"],
-                        normalize=False,
-                        cm = cm,
-                    )
+                    # plot_confusion_matrix(
+                    #     y_true=y_val,
+                    #     y_pred=y_pred,
+                    #     model_name=set_name,
+                    #     labels=["Negative", "Positive"],
+                    #     normalize=False,
+                    #     cm = cm,
+                    # )
                 print("\n")
                 
 # DataFrame de resultados e escolha do best
 df_res = pd.DataFrame(results)
+df_res = df_res[(df_res["Tp"] > 0) & (df_res["Fp"]>0) & (df_res["Tn"] > 0) & (df_res["Fn"]>0)]  # Filtrar apenas os resultados com True Positives
 best_idx = df_res['Accuracy'].idxmax()
 best_cfg = df_res.loc[best_idx]
 
 # Save results to JSON file
 df_res.to_json(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'results_ex3.json'), orient='records', lines=True)
 
-print(">>> Best config on validation:\n", best_cfg, "\n")
-
-# --- 3) Re-treino final em train+val e avaliação em test
-# mescla train+val
-df_full = pd.concat([df_train, df_val], axis=0).reset_index(drop=True)
-scaler = [c for c in scaler_configs if c['scaler_name']==best_cfg['scaling']][0]['scaler_class']()
-X_full, X_te, y_full, y_te = preprocess_data(scaler, df_full, df_test, target, fit=True)
-
-
-# aplicar spling final
-if best_cfg['spling'] == "Threshold":
-    clf = GradientBoostingClassifier(**{model_config['tuning_parameter']: param},
-                        random_state=model_config['random_state']
-                    )
-    clf.fit(X_full, y_full)
-    proba = clf.predict_proba(X_te)[:,1]
-    thr = best_cfg['threshold']
-    y_test_pred = (proba >= thr).astype(int)
-else:
-    spl_cls = {c['spling_name']: c['spling_class'] for c in spling_configs}[best_cfg['spling']]
-    if spl_cls is not None:
-        X_fs, y_fs = spl_cls.fit_resample(X_full, y_full)
-    else:
-        X_fs, y_fs = X_full, y_full
-    clf = GradientBoostingClassifier(**{model_config['tuning_parameter']: param},
-                        random_state=model_config['random_state']
-                    )
-    clf.fit(X_fs, y_fs)
-    y_test_pred = clf.predict(X_te)
-
 # métricas finais no test set
 print("=== Final Test Performance ===")
-print("Accuracy:", accuracy_score(y_te, y_test_pred))
+print("Accuracy:", best_cfg["Accuracy"])
 print("Classification Report:")
-print(classification_report(y_te, y_test_pred))
+print(best_cfg["Classification_Report"])
 print("Confusion Matrix:")
-cm_test = confusion_matrix(y_te, y_test_pred)
-print(cm_test)
-plot_confusion_matrix(y_true=y_te,
-                      y_pred=y_test_pred,
-                      model_name="FINAL_"+best_cfg['tag'],
+print(best_cfg["Confusion_Matrix"])
+
+plot_confusion_matrix(y_true=best_cfg["Y"],
+                      y_pred=best_cfg["YPred"],
+                      model_name=best_cfg["Model"],
                       labels=["Negative","Positive"],
                       normalize=False)
+x = 1
+# plt.show()
