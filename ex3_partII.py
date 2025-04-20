@@ -4,7 +4,9 @@ import pandas as pd
 import json
 import pickle
 from sklearn.preprocessing import MinMaxScaler, StandardScaler, RobustScaler, LabelEncoder, OneHotEncoder
-from sklearn.ensemble import GradientBoostingClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.neighbors import KNeighborsRegressor
+from sklearn.ensemble import GradientBoostingRegressor
 from imblearn.over_sampling import SMOTE, ADASYN
 from imblearn.under_sampling import RandomUnderSampler, NearMiss, ClusterCentroids, TomekLinks
 from imblearn.combine import SMOTEENN, SMOTETomek
@@ -24,42 +26,51 @@ f = open( current_dir , 'rb')
 print(f"Shapes: {X_train.shape}, {X_test.shape}, {X_val.shape}")
 
 # Transformar os valores contínuos em rótulos binários
-y_train = np.where(y_train == 0, 0, 1)
-y_val  = np.where(y_val == 0, 0, 1)
-y_test  = np.where(y_test == 0, 0, 1)
+y_train_bin = np.where(y_train == 0, 0, 1)
+y_val_bin  = np.where(y_val == 0, 0, 1)
+y_test_bin  = np.where(y_test == 0, 0, 1)
 
 # Define model configurations; include tuning keys for models that require parameter tuning.
 model_configurations = [
     {
-        'class_name': "GradientBoostingClassifier",
-        'model_class': GradientBoostingClassifier,
-        'tuning_parameter': 'learning_rate',
-        # "learning_rate": 0.1,   # Taxa de aprendizado
-        # "max_depth": 3,         # Profundidade das árvores
-        "random_state": 42,
-        'parameter_range': [0.1, 0.01, 0.001],  # Valores de taxa de aprendizado a serem testados
-        # 'parameter_range': list(range(5, 10, 5))
-        }
+        'class_name': "KNeighborsRegressor",
+        'model_class': KNeighborsRegressor,
+        'tuning_parameter': 'n_neighbors',
+        # 'parameter_range': [5]
+        'parameter_range': list(range(5, 40, 5))
+    },
+    {
+        'class_name': "LogisticRegression",
+        'model_class': LogisticRegression
+    },
+    {
+        'class_name': "GradientBoostingRegressor",
+        'model_class': GradientBoostingRegressor,
+        'tuning_parameter': 'n_estimators',
+        # 'parameter_range': [50],
+        'parameter_range': list(range(50, 100, 50)),
+        'random_state': 42
+    }
 ]
 
 # Define scaler configurations
 scaler_configs = [
     {"scaler_name": "MinMaxScaler", 'scaler_class': MinMaxScaler},
-    # {"scaler_name": "StandardScaler", 'scaler_class': StandardScaler},
-    # {"scaler_name": "RobustScaler", 'scaler_class': RobustScaler}
+    {"scaler_name": "StandardScaler", 'scaler_class': StandardScaler},
+    {"scaler_name": "RobustScaler", 'scaler_class': RobustScaler}
 ]
 
 #Spling the data into train and test sets
 spling_configs = [
-    {"spling_name": "SMOTE", 'spling_class': SMOTE(random_state=42)},
-    {"spling_name": "ADASYN", 'spling_class': ADASYN(random_state=42)},
-    {"spling_name": "RandomUnderSampler", 'spling_class': RandomUnderSampler(random_state=42)},
-    {"spling_name": "NearMiss", 'spling_class': NearMiss()},
-    {"spling_name": "ClusterCentroids", 'spling_class': ClusterCentroids(random_state=42)},
-    {"spling_name": "TomekLinks", 'spling_class': TomekLinks()},
-    {"spling_name": "SMOTEENN", 'spling_class': SMOTEENN(random_state=42)},
-    {"spling_name": "SMOTETomek", 'spling_class': SMOTETomek(random_state=42)},
-    {"spling_name": "Threshold", 'spling_class': np.arange(0.1, 1.0, 0.1)},
+    # {"spling_name": "SMOTE", 'spling_class': SMOTE(random_state=42)},
+    # {"spling_name": "ADASYN", 'spling_class': ADASYN(random_state=42)},
+    # {"spling_name": "RandomUnderSampler", 'spling_class': RandomUnderSampler(random_state=42)},
+    # {"spling_name": "NearMiss", 'spling_class': NearMiss()},
+    # {"spling_name": "ClusterCentroids", 'spling_class': ClusterCentroids(random_state=42)},
+    # {"spling_name": "TomekLinks", 'spling_class': TomekLinks()},
+    # {"spling_name": "SMOTEENN", 'spling_class': SMOTEENN(random_state=42)},
+    # {"spling_name": "SMOTETomek", 'spling_class': SMOTETomek(random_state=42)},
+    # {"spling_name": "Threshold", 'spling_class': np.arange(0.1, 1.0, 0.1)},
     {"spling_name": "WithOut", 'spling_class': None},
 ]
 
@@ -68,13 +79,13 @@ target = 'target'
 scoring_type = 'accuracy'  # Or 'f1', 'precision', 'recall'
 
 X_train_df = pd.DataFrame(X_train)
-y_train_df = pd.Series(y_train.ravel(), name=target)
+y_train_df = pd.Series(y_train_bin.ravel(), name=target)
 
 X_test_df = pd.DataFrame(X_test)
-y_test_df = pd.Series(y_test.ravel(), name=target)
+y_test_df = pd.Series(y_test_bin.ravel(), name=target)
 
 X_val_df = pd.DataFrame(X_val)
-y_val_df = pd.Series(y_val.ravel(), name=target)
+y_val_df = pd.Series(y_val_bin.ravel(), name=target)
 
 # Criar DataFrames finais
 df_train = pd.concat([X_train_df, y_train_df], axis=1).reset_index(drop=True)
@@ -82,6 +93,16 @@ df_test  = pd.concat([X_test_df, y_test_df], axis=1).reset_index(drop=True)
 df_val   = pd.concat([X_val_df, y_val_df], axis=1).reset_index(drop=True)
 
 results = []
+#Step1
+y_train_bin = (y_train > 0).astype(int)
+
+#Step 2
+
+#Step 3
+
+#Step 4
+
+#Step 5
 
 # Loop principal
 for model_config in model_configurations:
@@ -99,6 +120,7 @@ for model_config in model_configurations:
                       f"Parâmetro={model_config['tuning_parameter']}={param}, "
                       f"Scaler={scaler_config['scaler_name']}, "
                       f"Spling={spling_config['spling_name']}")
+                
                 set_name = f"{model_class_name}_{model_config['tuning_parameter']}_{param}_{scaler_name}_{spling_name}"
                 # Instanciar scaler
                 scaler = scaler_config['scaler_class']()
@@ -108,15 +130,16 @@ for model_config in model_configurations:
                     scaler, df_train, df_val, target_column='target', fit=True
                 )
 
+
                 # Aplicar spling (se aplicável)
                 if spling_config['spling_name'] == "Threshold":
                     for threshold in spling_config['spling_class']:
-                        model = model_config['model_class'](
+                        model_R = model_config['model_class'](
                             **{model_config['tuning_parameter']: param},
                             random_state=model_config['random_state']
                         )
-                        model.fit(X_tr, y_tr)
-                        y_proba = model.predict_proba(X_val_scaled)[:, 1]
+                        model_R.fit(X_tr, y_tr)
+                        y_proba = model_R.predict_proba(X_val_scaled)[:, 1]
                         y_pred = (y_proba >= threshold).astype(int)
 
                         acc = accuracy_score(y_val, y_pred)
@@ -147,12 +170,12 @@ for model_config in model_configurations:
                 elif spling_config['spling_name'] != "WithOut":
                     X_resampled, y_resampled = spling_config['spling_class'].fit_resample(X_tr, y_tr)
 
-                    model = model_config['model_class'](
+                    model_R = model_config['model_class'](
                         **{model_config['tuning_parameter']: param},
                         random_state=model_config['random_state']
                     )
-                    model.fit(X_resampled, y_resampled)
-                    y_pred = model.predict(X_val_scaled) 
+                    model_R.fit(X_resampled, y_resampled)
+                    y_pred = model_R.predict(X_val_scaled) 
                     cm = confusion_matrix(y_val, y_pred).tolist()
 
                     results.append({
@@ -178,12 +201,16 @@ for model_config in model_configurations:
 
                 else:
                     # Caso sem balanceamento
-                    model = model_config['model_class'](
+                    model_R = model_config['model_class'](
                         **{model_config['tuning_parameter']: param},
                         random_state=model_config['random_state']
                     )
-                    model.fit(X_tr, y_tr)
-                    y_pred = model.predict(X_val_scaled)
+                    model_R.fit(X_tr, y_train_bin)
+                    y_pred = model_R.predict(X_tr)
+                    mask_pos = (y_tr == 1)
+                    X_train_1 = X_tr[mask_pos]
+                    y_train_1 = y_train[mask_pos]
+
                     cm = confusion_matrix(y_val, y_pred).tolist()
                     results.append({
                         "Model": set_name,
@@ -207,55 +234,3 @@ for model_config in model_configurations:
                         cm = cm,
                     )
                 print("\n")
-                
-# DataFrame de resultados e escolha do best
-df_res = pd.DataFrame(results)
-best_idx = df_res['Accuracy'].idxmax()
-best_cfg = df_res.loc[best_idx]
-
-# Save results to JSON file
-df_res.to_json(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'results_ex3.json'), orient='records', lines=True)
-
-print(">>> Best config on validation:\n", best_cfg, "\n")
-
-# --- 3) Re-treino final em train+val e avaliação em test
-# mescla train+val
-df_full = pd.concat([df_train, df_val], axis=0).reset_index(drop=True)
-scaler = [c for c in scaler_configs if c['scaler_name']==best_cfg['scaling']][0]['scaler_class']()
-X_full, X_te, y_full, y_te = preprocess_data(scaler, df_full, df_test, target, fit=True)
-
-
-# aplicar spling final
-if best_cfg['spling'] == "Threshold":
-    clf = GradientBoostingClassifier(**{model_config['tuning_parameter']: param},
-                        random_state=model_config['random_state']
-                    )
-    clf.fit(X_full, y_full)
-    proba = clf.predict_proba(X_te)[:,1]
-    thr = best_cfg['threshold']
-    y_test_pred = (proba >= thr).astype(int)
-else:
-    spl_cls = {c['spling_name']: c['spling_class'] for c in spling_configs}[best_cfg['spling']]
-    if spl_cls is not None:
-        X_fs, y_fs = spl_cls.fit_resample(X_full, y_full)
-    else:
-        X_fs, y_fs = X_full, y_full
-    clf = GradientBoostingClassifier(**{model_config['tuning_parameter']: param},
-                        random_state=model_config['random_state']
-                    )
-    clf.fit(X_fs, y_fs)
-    y_test_pred = clf.predict(X_te)
-
-# métricas finais no test set
-print("=== Final Test Performance ===")
-print("Accuracy:", accuracy_score(y_te, y_test_pred))
-print("Classification Report:")
-print(classification_report(y_te, y_test_pred))
-print("Confusion Matrix:")
-cm_test = confusion_matrix(y_te, y_test_pred)
-print(cm_test)
-plot_confusion_matrix(y_true=y_te,
-                      y_pred=y_test_pred,
-                      model_name="FINAL_"+best_cfg['tag'],
-                      labels=["Negative","Positive"],
-                      normalize=False)

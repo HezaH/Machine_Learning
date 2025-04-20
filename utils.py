@@ -215,7 +215,32 @@ def preprocess_data(scaler, df_train, df_test, target_column, fit=True):
         y_train = df_train[target_column]
         y_test  = df_test[target_column]
         return X_train, X_test, y_train, y_test
-  
+
+def get_model_scores(model, scaler, df_train, df_test, target_column='target'):
+    """
+    Pré-processa os dados, treina o modelo e retorna os scores (probabilidades ou decision function)
+    para os dados de teste.
+
+    Parâmetros:
+    - model: instância do classificador
+    - scaler: instância do escalonador
+    - df_train: DataFrame de treino
+    - df_test: DataFrame de teste
+    - target_column: nome da coluna alvo
+
+    Retorna:
+    - y_scores: scores do modelo para df_test
+    - y_true: rótulos reais de df_test
+    """
+    X_train, X_test, y_train, y_test = preprocess_data(
+        scaler, df_train, df_test, target_column=target_column, fit=True
+    )
+    model.fit(X_train, y_train)
+    if hasattr(model, "predict_proba"):
+        y_scores = model.predict_proba(X_test)[:, 1]
+    else:
+        y_scores = model.decision_function(X_test)
+    return y_scores, y_test
 
 def pipeline_model(spling_configs, clf, X_train, y_train, X_test, y_test):
     
@@ -404,3 +429,24 @@ def cross_validate_models(model_configurations, scaler_configs, spling_configs, 
     
     return df_scores
 
+def plot_confusion_matrix_from_values(tp, tn, fp, fn, labels=['Negativo', 'Positivo'], title='Matriz de Confusão'):
+    """
+    Plota a matriz de confusão a partir dos valores TP, TN, FP, FN.
+
+    Parâmetros:
+    - tp: Verdadeiros Positivos
+    - tn: Verdadeiros Negativos
+    - fp: Falsos Positivos
+    - fn: Falsos Negativos
+    - labels: Lista com os rótulos das classes [Negativo, Positivo]
+    - title: Título do gráfico
+    """
+    cm = np.array([[tn, fp],
+                   [fn, tp]])
+
+    plt.figure(figsize=(6, 5))
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=labels, yticklabels=labels)
+    plt.xlabel('Classe Predita')
+    plt.ylabel('Classe Real')
+    plt.title(title)
+    plt.show()
