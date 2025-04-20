@@ -65,39 +65,62 @@ def find_optimal_cost_threshold(y_true, y_scores, cost_ratio, thresholds=None):
 def find_closest_threshold_idx(thresholds, target_threshold):
     return np.abs(thresholds - target_threshold).argmin()
 
-def plot_confusion_matrices(conf_matrix, cost_scenarios, optimal_thresholds, method):
-    fig, axes = plt.subplots(2, 3, figsize=(15, 10))
-    axes = axes.flatten()
+def plot_confusion_matrices(
+    conf_matrices: dict,         # e.g. {"Scenario A": cm_a, "Scenario B": cm_b, ...}
+    method_name: str,            # e.g. "GradientBoosting"
+    thresholds: dict = None,     # opcionalmente {"Scenario A": 0.3, ...}
+    labels: list = None          # opcionalmente ['Negative','Positive']
+):
+    """
+    Plota, em uma grade automática, uma heatmap para cada matriz de confusão
+    em `conf_matrices`. Usa títulos baseados em method_name e keys do dict.
+    
+    - conf_matrices: dict de {cenário: confusion_matrix 2×2}
+    - method_name: nome do modelo/preprocessing, exibido no título
+    - thresholds: dict de {cenário: limiar ótimo} para mostrar junto do título
+    - labels: lista de rótulos das classes; se None, usa [0,1]
+    """
+    scenarios = list(conf_matrices.keys())
+    n = len(scenarios)
+    # definir grid (até 3 colunas)
+    ncols = min(3, n)
+    nrows = (n + ncols - 1) // ncols
 
-    for i, (name, cost_ratio) in enumerate(cost_scenarios.items()):
-        if i >= len(axes):
-            break
+    fig, axes = plt.subplots(nrows, ncols, figsize=(5*ncols, 4*nrows))
+    axes = np.atleast_1d(axes).flatten()
 
-        threshold = optimal_thresholds[name]["threshold"]
-        cm = conf_matrix
+    for ax, scenario in zip(axes, scenarios):
+        cm = conf_matrices[scenario]
+        # normalizar
+        cm_norm = cm.astype(float) / cm.sum(axis=1, keepdims=True)
+        
+        im = ax.imshow(cm, interpolation='nearest', cmap=plt.cm.Blues)
+        title = f"{method_name}\n{scenario}"
+        if thresholds and scenario in thresholds:
+            title += f"\nThreshold={thresholds[scenario]:.3f}"
+        ax.set_title(title)
+        
+        # ticks e labels
+        cls_labels = labels or [0, 1]
+        ax.set_xticks([0,1]); ax.set_yticks([0,1])
+        ax.set_xticklabels(cls_labels); ax.set_yticklabels(cls_labels)
+        ax.set_xlabel("Predicted"); ax.set_ylabel("Actual")
 
-        cm_norm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+        # anotações
+        for i in (0,1):
+            for j in (0,1):
+                ax.text(j, i,
+                        f"{cm[i,j]}\n({cm_norm[i,j]:.1%})",
+                        ha="center", va="center",
+                        color="white" if cm[i,j] > cm.max()/2 else "black")
 
-        im = axes[i].imshow(cm, interpolation='nearest', cmap=plt.cm.Blues)
-        axes[i].set_title(f"{method} - {name}\nThreshold = {threshold:.3f}")
-        axes[i].set_xticks([0, 1])
-        axes[i].set_yticks([0, 1])
-        axes[i].set_xticklabels(['Negative', 'Positive'])
-        axes[i].set_yticklabels(['Negative', 'Positive'])
-        axes[i].set_xlabel('Predicted')
-        axes[i].set_ylabel('Actual')
-
-        for r in range(2):
-            for c in range(2):
-                axes[i].text(c, r, f"{cm[r, c]}\n({cm_norm[r, c]:.2%})",
-                             ha="center", va="center",
-                             color="white" if cm[r, c] > cm.max()/2 else "black")
-
-    for j in range(i + 1, len(axes)):
-        axes[j].axis('off')
+    # desligar eixos extras
+    for ax in axes[len(scenarios):]:
+        ax.axis('off')
 
     plt.tight_layout()
     return fig
+
 
 def regressor_plot(y_test, y_pred, title):
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
@@ -122,15 +145,64 @@ def regressor_plot(y_test, y_pred, title):
     plt.tight_layout()
     plt.show()
 
+def plot_confusion_matrix(y_true, y_pred, model_name=None, labels=None, normalize=False, cmap="Blues", cm = None):
+    """
+    Plota a matriz de confusão para classificação binária.
+
+    Parâmetros:
+    -----------
+    y_true : array-like
+        Rótulos verdadeiros (0 ou 1).
+    y_pred : array-like
+        Rótulos previstos (0 ou 1).
+    model_name : str ou None
+        Título opcional do gráfico (nome do modelo).
+    labels : list de str ou None
+        Nomes das classes. Ex.: ['Negative', 'Positive'].
+        Se None, usa ['0', '1'].
+    normalize : bool
+        Se True, normaliza as células para proporções por linha.
+    cmap : str
+        Colormap para o heatmap.
+    """
+    # Define os labels
+    if labels is None:
+        labels = ['0', '1']
+
+    # Calcula a matriz
+    if cm is None:
+        cm = confusion_matrix(y_true, y_pred, normalize='true' if normalize else None)
+        # Para exibir números absolutos, remova normalize ou use normalize=None
+
+    # Cria a figura
+    plt.figure(figsize=(6, 5))
+    ax = sns.heatmap(cm, annot=True, fmt='.2f' if normalize else 'd',
+                     cmap=cmap, cbar=False,
+                     xticklabels=labels, yticklabels=labels)
+
+    # Configurações de eixo e título
+    ax.set_xlabel('Predicted', fontsize=12)
+    ax.set_ylabel('Actual', fontsize=12)
+    title = "Confusion Matrix"
+    if model_name:
+        title += f" — {model_name}"
+    if normalize:
+        title += " (Normalized)"
+    ax.set_title(title, fontsize=14)
+
+    # plt.tight_layout()
+    # plt.show()
 
 #função para criar a matriz de confusão e relatório de classificação
-def MatConf(verdadeiros, previstos, titulo, rotulos_x = "AxisX", rotulos_y = "AxisY"):
-  conf_matrix = confusion_matrix(verdadeiros, previstos,  normalize="true")
-  s = sns.heatmap(conf_matrix, annot=True, cmap="Greens",
-              xticklabels=rotulos_x, yticklabels=rotulos_y)
-  s.set(xlabel = "Rótulo Previsto", ylabel="Rótulo Verdadeiro", title=titulo)
-#   ax2.show()
-  print(classification_report(verdadeiros, previstos))
+def MatConf(verdadeiros, previstos, titulo, rotulos_x="AxisX", rotulos_y="AxisY"):
+    conf_matrix = confusion_matrix(verdadeiros, previstos)
+    plt.figure(figsize=(6, 5))
+    s = sns.heatmap(conf_matrix, annot=True, cmap="Greens",
+                    xticklabels=rotulos_x, yticklabels=rotulos_y,
+                    fmt=".2f")
+    s.set(xlabel="Rótulo Previsto", ylabel="Rótulo Verdadeiro", title=titulo)
+    # plt.tight_layout()
+    plt.show()
 
 def preprocess_data(scaler, df_train, df_test, target_column, fit=True):
         # Drop target column and scale features
