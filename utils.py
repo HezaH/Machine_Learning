@@ -238,7 +238,7 @@ def get_model_scores(model, scaler, df_train, df_test, target_column='target'):
     model.fit(X_train, y_train)
     if hasattr(model, "predict_proba"):
         # Se o modelo tem predict_proba, usamos para obter scores (ex.: classificadores)
-        y_scores = model.predict_proba(X_test)[:, 1]
+        y_scores = model.predict_proba(X_test)
     elif hasattr(model, "decision_function"):
         # Se tiver decision_function, usamos ele
         y_scores = model.decision_function(X_test)
@@ -454,4 +454,4 @@ def plot_confusion_matrix_from_values(tp, tn, fp, fn, labels=['Negativo', 'Posit
     plt.xlabel('Classe Predita')
     plt.ylabel('Classe Real')
     plt.title(title)
-    plt.show()
+    # plt.show()

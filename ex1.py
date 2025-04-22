@@ -20,7 +20,7 @@ import os
 # ===========================
 
 name_columns = ["ESCT", "NDEP", "RENDA", "TIPOR", "VBEM", "NPARC", "VPARC", "TEL", "IDADE", "RESMS", "ENTRADA", "CLASSE"]
-target_column = "CLASSE"
+target_column = "CLASSE" #1 se o cliente pagou a dívida
 
 path_base = os.path.dirname(os.path.realpath(__file__))
 df_train = pd.read_csv(os.path.join(path_base, 'credtrain.txt'), sep='\t', header=None)
@@ -112,7 +112,8 @@ for model_config in model_configurations:
 
         # Avaliação no conjunto de teste
         y_test_scores, y_test = get_model_scores(model, scaler, df_train, df_test, target_column=target_column)
-        y_test_pred = (y_test_scores >= best_threshold).astype(int)
+        probs = y_test_scores[:, 1]
+        y_test_pred = (probs >= best_threshold).astype(int)
 
         # Matriz de confusão e métricas
         cm = confusion_matrix(y_test, y_test_pred)
@@ -147,12 +148,20 @@ for model_config in model_configurations:
         plt.plot(data['fpr'], data['tpr'], label=f"{data['scaler_name']} (AUC = {data['auc']:.2f})")
         plt.scatter(*data['best_point'], marker='o', color='black', label=f"Melhor limiar: {data['scaler_name']}")
 
-    plt.xlabel('Taxa de Falsos Positivos')
-    plt.ylabel('Taxa de Verdadeiros Positivos')
-    plt.title(f'Curva ROC - {model_class_name}')
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.title(f'Curve ROC - {model_class_name}')
     plt.legend()
     plt.grid()
     plt.show()
 
 # Criar DataFrame de resultados
 df_res = pd.DataFrame(results)
+
+best_model = df_res[(df_res["Accuracy"] == max(df_res["Accuracy"].to_list()))]["Model"].reset_index(drop=True).loc[0]
+model, scaler = best_model.split("_")
+
+print("The best model was ", model, " and using the scaler ", scaler)
+
+print(" \n")
+

@@ -2,6 +2,7 @@ import os
 import numpy as np
 import pandas as pd
 import json
+import matplotlib.pyplot as plt
 import pickle
 from sklearn.preprocessing import MinMaxScaler, StandardScaler, RobustScaler, LabelEncoder, OneHotEncoder
 from sklearn.ensemble import GradientBoostingClassifier
@@ -9,11 +10,11 @@ from imblearn.over_sampling import SMOTE, ADASYN
 from imblearn.under_sampling import RandomUnderSampler, NearMiss, ClusterCentroids, TomekLinks
 from imblearn.combine import SMOTEENN, SMOTETomek
 from sklearn.metrics import (confusion_matrix, classification_report,
-                             mean_absolute_error, mean_squared_error, f1_score,
+                             mean_absolute_error, mean_squared_error,
                              accuracy_score, classification_report)
 
 from utils import (
-     preprocess_data, plot_confusion_matrices, plot_confusion_matrix)
+     preprocess_data, plot_confusion_matrix)
 
 
 current_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'A652.pickle')
@@ -51,14 +52,14 @@ scaler_configs = [
 
 #Spling the data into train and test sets
 spling_configs = [
-    {"spling_name": "SMOTE", 'spling_class': SMOTE(random_state=42)},
-    {"spling_name": "ADASYN", 'spling_class': ADASYN(random_state=42)},
-    {"spling_name": "RandomUnderSampler", 'spling_class': RandomUnderSampler(random_state=42)},
-    {"spling_name": "NearMiss", 'spling_class': NearMiss()},
-    {"spling_name": "ClusterCentroids", 'spling_class': ClusterCentroids(random_state=42)},
-    {"spling_name": "TomekLinks", 'spling_class': TomekLinks()},
-    {"spling_name": "SMOTEENN", 'spling_class': SMOTEENN(random_state=42)},
-    {"spling_name": "SMOTETomek", 'spling_class': SMOTETomek(random_state=42)},
+    # {"spling_name": "SMOTE", 'spling_class': SMOTE(random_state=42)},
+    # {"spling_name": "ADASYN", 'spling_class': ADASYN(random_state=42)},
+    # {"spling_name": "RandomUnderSampler", 'spling_class': RandomUnderSampler(random_state=42)},
+    # {"spling_name": "NearMiss", 'spling_class': NearMiss()},
+    # {"spling_name": "ClusterCentroids", 'spling_class': ClusterCentroids(random_state=42)},
+    # {"spling_name": "TomekLinks", 'spling_class': TomekLinks()},
+    # {"spling_name": "SMOTEENN", 'spling_class': SMOTEENN(random_state=42)},
+    # {"spling_name": "SMOTETomek", 'spling_class': SMOTETomek(random_state=42)},
     {"spling_name": "Threshold", 'spling_class': np.arange(0.1, 1.0, 0.1)},
     {"spling_name": "WithOut", 'spling_class': None},
 ]
@@ -93,7 +94,9 @@ for model_config in model_configurations:
 
         for spling_config in spling_configs:
             spling_name = spling_config['spling_name']
-            
+
+            roc_data = []
+
             for param in model_config['parameter_range']:
                 print(f"\n Rodando: Modelo={model_config['class_name']}, "
                       f"Parâmetro={model_config['tuning_parameter']}={param}, "
@@ -142,14 +145,6 @@ for model_config in model_configurations:
                             "YPred": y_pred
                         })
 
-                        # plot_confusion_matrix(
-                        #     y_true=y_val,
-                        #     y_pred=y_pred,
-                        #     model_name=set_name,
-                        #     labels=["Negative", "Positive"],
-                        #     normalize=False,
-                        #     cm = cm)
-
                 elif spling_config['spling_name'] != "WithOut":
                     X_resampled, y_resampled = spling_config['spling_class'].fit_resample(X_tr, y_tr)
 
@@ -180,14 +175,6 @@ for model_config in model_configurations:
                         "YPred": y_pred
                     })
 
-                    # plot_confusion_matrix(
-                    #     y_true=y_val,
-                    #     y_pred=y_pred,
-                    #     model_name=set_name,
-                    #     labels=["Negative", "Positive"],
-                    #     normalize=False,
-                    #     cm = cm)
-
                 else:
                     # Caso sem balanceamento
                     model = model_config['model_class'](
@@ -217,16 +204,9 @@ for model_config in model_configurations:
                         "YPred": y_pred
                     })
 
-                    # plot_confusion_matrix(
-                    #     y_true=y_val,
-                    #     y_pred=y_pred,
-                    #     model_name=set_name,
-                    #     labels=["Negative", "Positive"],
-                    #     normalize=False,
-                    #     cm = cm,
-                    # )
                 print("\n")
-                
+ 
+
 # DataFrame de resultados e escolha do best
 df_res = pd.DataFrame(results)
 df_res = df_res[(df_res["Tp"] > 0) & (df_res["Fp"]>0) & (df_res["Tn"] > 0) & (df_res["Fn"]>0)]  # Filtrar apenas os resultados com True Positives
@@ -249,5 +229,44 @@ plot_confusion_matrix(y_true=best_cfg["Y"],
                       model_name=best_cfg["Model"],
                       labels=["Negative","Positive"],
                       normalize=False)
-x = 1
-# plt.show()
+
+
+model_selected =  [mod for mod in model_configurations if mod['class_name'] == best_cfg["Model"].split("&")[0]][0]
+scaler_selected = [sca for sca in scaler_configs if sca['scaler_name'] == best_cfg["Model"].split("&")[3]][0]
+param_selected  = [para for para in spling_configs if para['spling_name'] == best_cfg["Model"].split("&")[-1]][0]
+
+# Obtenha o scaler a ser usado:
+final_scaler = scaler_selected['scaler_class']()  # Exemplo: StandardScaler()
+
+final_model = model_selected['model_class'](
+    **{model_selected['tuning_parameter']: param},
+    random_state=model_selected['random_state']
+)
+
+# Pré-processamento final: ajuste o scaler utilizando todo o df_train e transforme df_test.
+X_train_final, X_test_final, y_train_final, y_test_final = preprocess_data(
+    final_scaler, df_train, df_test, target_column='target', fit=True
+)
+
+final_model.fit(X_train_final, y_train_final)
+
+if param_selected['spling_name'] == "Threshold":
+    y_proba_final = final_model.predict_proba(X_test_final)[:, 1]
+    # Supondo que o melhor threshold esteja armazenado também em best_cfg:
+    best_threshold = best_cfg["threshold"]  # Se você tiver armazenado o valor
+    y_test_pred_final = (y_proba_final >= best_threshold).astype(int)
+else:
+    y_test_pred_final = final_model.predict(X_test_final)
+
+# Fazer as predições finais no conjunto de teste:
+y_test_pred_final = final_model.predict(X_test_final)
+
+final_accuracy = accuracy_score(y_test_final, y_test_pred_final)
+final_report = classification_report(y_test_final, y_test_pred_final)
+final_cm = confusion_matrix(y_test_final, y_test_pred_final).tolist()
+
+print("Modelo final:", model_selected['class_name'])
+print("Acurácia Final:", final_accuracy)
+print("Relatório Final de Classificação:")
+print(final_report)
+print("Matriz de Confusão Final:", final_cm)
