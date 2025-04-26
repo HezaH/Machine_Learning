@@ -18,6 +18,10 @@ from sklearn.metrics import (accuracy_score,
 from utils import (
     get_model_scores, plot_confusion_matrix_from_values)
 import os
+import time
+
+# Inicia a medição do tempo
+start_time = time.time()
 # ===========================
 # CARREGAMENTO E PRÉ-PROCESSAMENTO
 # ===========================
@@ -166,5 +170,9 @@ print(f"ROC AUC (Validação): {best_model['roc_auc_val']:.4f}")
 print(f"ROC AUC (Teste): {best_model['roc_auc_test']:.4f}")
 
 
+# Finaliza a medição do tempo
+end_time = time.time()
+elapsed_time = end_time - start_time
+print(f"\nTempo total de processamento: {elapsed_time:.2f} segundos")
 
 
