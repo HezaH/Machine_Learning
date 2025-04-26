@@ -454,4 +454,4 @@ def plot_confusion_matrix_from_values(tp, tn, fp, fn, labels=['Negativo', 'Posit
     plt.xlabel('Classe Predita')
     plt.ylabel('Classe Real')
     plt.title(title)
-    # plt.show()
+    plt.show()
