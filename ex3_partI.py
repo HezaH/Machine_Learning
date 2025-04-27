@@ -15,51 +15,7 @@ from sklearn.ensemble import GradientBoostingClassifier
 from imblearn.over_sampling import SMOTE, ADASYN
 from imblearn.under_sampling import RandomUnderSampler, NearMiss, ClusterCentroids, TomekLinks
 from imblearn.combine import SMOTEENN, SMOTETomek
-
-from utils import (
-     preprocess_data, plot_confusion_matrix)
 import time
-
-def plot_results(counter, result):
-    """
-    Plots, side by side, the confusion matrix and the classification report.
-    
-    Parameters:
-      result: dictionary containing the keys:
-          - "Model": model name/configuration
-          - "Confusion_Matrix": confusion matrix (list of lists or array)
-          - "Classification_Report": classification report (dictionary, obtained with output_dict=True)
-    """
-    # Extract information from the dictionary
-    cm = result["Confusion_Matrix"]
-    clf_report = result["Classification_Report"]
-    model_name = result["Model"]
-    
-    # Create a DataFrame for the classification report
-    clf_report_df = pd.DataFrame(clf_report).transpose()
-
-    # Create the figure with two subplots (side by side)
-    fig, ax = plt.subplots(ncols=2, figsize=(12, 5))
-    
-    # -- Plot the Confusion Matrix --
-    sns.heatmap(cm, annot=True, fmt="d", cmap='Blues', ax=ax[0])
-    ax[0].set_title(f'Confusion Matrix\n{model_name}')
-    ax[0].set_xlabel('Predicted')
-    ax[0].set_ylabel('Actual')
-    
-    # -- Display the Classification Report as a Table --
-    ax[1].axis('off')  # Turn off the axis, as we will only use the area for the table
-    table = ax[1].table(cellText=clf_report_df.round(2).values,
-                        rowLabels=clf_report_df.index,
-                        colLabels=clf_report_df.columns,
-                        cellLoc="center",
-                        loc='center')
-    table.auto_set_font_size(False)
-    table.set_fontsize(10)
-    ax[1].set_title(f'Classification Report\n{model_name}')
-    
-    plt.tight_layout()
-    plt.savefig(f'plot_{result["Model"]}_{counter}.png')
 
 # Start time measurement
 start_time = time.time()
@@ -251,10 +207,7 @@ tuning_value = float(components[2])
 sampling_name = components[3]
 
 # Model mapping (here we only have GradientBoostingClassifier, but if there are more, add them)
-model_class_mapping = {
-    "GradientBoostingClassifier": GradientBoostingClassifier
-}
-model_class = model_class_mapping[model_class_str]
+model_class = model_configurations[0]['model_class']
 
 if sampling_name == "Threshold":
     best_threshold = best_result["threshold"]

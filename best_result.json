@@ -1,7 +1,7 @@
 {
     "Model": "GradientBoostingClassifier&learning_rate&0.01&Threshold",
     "Accuracy": 0.9449321628092577,
-    "spling": "Threshold",
+    "sampling": "Threshold",
     "scaler": "StandardScaler",
     "threshold": 0.30000000000000004,
     "Confusion_Matrix": [
