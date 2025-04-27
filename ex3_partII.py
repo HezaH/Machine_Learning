@@ -114,11 +114,14 @@ df_train = pd.concat([pd.DataFrame(X_train), pd.Series(y_train.ravel(), name=tar
 df_val = pd.concat([pd.DataFrame(X_val), pd.Series(y_val.ravel(), name=target)], axis=1).reset_index(drop=True)
 df_test = pd.concat([pd.DataFrame(X_test), pd.Series(y_test.ravel(), name=target)], axis=1).reset_index(drop=True)
 
+df_global_train = pd.concat([df_train, df_val], axis=0, ignore_index=True)
+
 # Separate features (X) and labels (y) for each set
 X_train_data = df_train.drop(columns=[target])
 y_train_data = df_train[target].values
 
 X_val_data = df_val.drop(columns=[target])
+
 X_test_data = df_test.drop(columns=[target])
 
 # Preprocessing and scaling configuration
@@ -230,16 +233,19 @@ pipeline_C = Pipeline([
     ('preprocessor', preprocessor),
     ('classifier', model)
 ])
-New_X_train = pd.concat([X_train_data, X_val_data], axis=0, ignore_index=True)
-New_y_train = y_train_data + y_val
-pipeline_C.fit(New_X_train, New_y_train)
-y_train_pred = pipeline_C.predict(X_train)
+
+X_global_train = df_global_train.drop(columns=[target])
+y_global_train = df_global_train[target]
+
+pipeline_C.fit(X_global_train, y_global_train)
+y_train_pred = pipeline_C.predict(X_global_train)
+y_proba = pipeline_model.predict_proba(X_global_train)[:, 1]
+y_pred = (y_proba >= best_threshold).astype(int)
 
 # Extração dos exemplos positivos no conjunto de treino
-mask = (y_train_pred == 1)
-X_train_1 = X_train[mask]
-y_train_1 = y_train[mask]
-
+mask = (y_pred == 1)
+X_train_1 = X_global_train[mask]
+y_train_1 = y_global_train[mask]
 
 # --- Parte 2: Treinamento do Regressor (R) – Modelo Híbrido ---
 # Definir configurações dos modelos de regressão
