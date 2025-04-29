@@ -89,14 +89,18 @@ model_configurations = [
     {
         'class_name': "KNeighborsRegressor",
         'model_class': KNeighborsRegressor,
-        'param_grid': { 'model__n_neighbors': [3, 5, 7, 9] }
+        'param_grid':{
+            'model__n_neighbors': [3, 5, 7, 9],
+            'model__weights': ['uniform', 'distance']
+        }
     },
     {
         'class_name': "GradientBoostingRegressor",
         'model_class': GradientBoostingRegressor,
-        'param_grid': { 
-            'model__n_estimators': [50, 100, 150],
-            'model__learning_rate': [0.01, 0.1, 0.2]
+        'param_grid': {
+            'model__n_estimators': [50, 100, 200],
+            'model__learning_rate': [0.01, 0.1, 0.2],
+            'model__max_depth': [3, 5]
         },
         'random_state': 42
     }
@@ -104,7 +108,6 @@ model_configurations = [
 
 # Configuração dos CV: outer CV com 5 folds e inner CV com 5 folds
 outer_cv = KFold(n_splits=5, shuffle=True, random_state=42)
-inner_cv = KFold(n_splits=5, shuffle=True, random_state=42)
 
 nested_results = []
 
@@ -124,7 +127,8 @@ for config in model_configurations:
         ('preprocessor', preprocessor),
         ('model', base_model)
     ])
-    
+
+    inner_cv = KFold(n_splits=5, shuffle=True, random_state=42)
     # Configura a GridSearch para o inner CV
     grid_search = GridSearchCV(estimator=pipeline_candidate,
                                param_grid=config['param_grid'],
@@ -153,6 +157,9 @@ for config in model_configurations:
 
 # Converte os resultados da nested CV para um DataFrame e exibe
 df_nested = pd.DataFrame(nested_results)
+df_nested['rmse_mean'] = np.sqrt(-df_nested['mean_neg_mse'])
+df_nested['rmse_std']  = np.sqrt(df_nested['std_neg_mse'].abs())
+
 print("\nResultados da Nested Cross-Validation:")
 print(df_nested)
 
