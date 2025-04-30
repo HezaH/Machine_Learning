@@ -1,204 +1,494 @@
 import pandas as pd
 import numpy as np
-from math import sqrt
-import os, time
+import os
+import time
 import matplotlib.pyplot as plt
+import seaborn as sns
 
-from sklearn.model_selection import train_test_split, KFold, GridSearchCV, cross_val_score
+from sklearn.model_selection import train_test_split, KFold, RandomizedSearchCV, cross_val_score
 from sklearn.pipeline import Pipeline
 from sklearn.compose import ColumnTransformer
-from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.preprocessing import StandardScaler, OrdinalEncoder
 from sklearn.metrics import mean_squared_error, r2_score
-
-# Importação dos modelos candidatos (apenas os que trabalham com regressão)
 from sklearn.neighbors import KNeighborsRegressor
 from sklearn.ensemble import GradientBoostingRegressor
+from scipy.stats import randint, uniform
 
-# Função de avaliação do modelo de regressão
-def model_evaluation_regression(model_name, y_test, y_pred):
-    """
-    Avalia o desempenho de um modelo de regressão:
-      - Exibe um gráfico com: 
-            (1) Previsões vs. Valores reais
-            (2) Gráfico dos resíduos
-      - Exibe num texto as métricas MSE e R²
-    """
-    mse = mean_squared_error(y_test, y_pred)
-    r2  = r2_score(y_test, y_pred)
-    residuals = y_test - y_pred
-
-    fig, axs = plt.subplots(1, 2, figsize=(12, 5))
+def model_evaluation(model_name, y_true, y_pred, feature_importances=None):
+    """Gera visualizações completas de avaliação do modelo"""
+    plt.figure(figsize=(15, 6))
     
-    # 1. Predicted vs Actual
-    axs[0].scatter(y_test, y_pred, color='blue', alpha=0.6)
-    axs[0].plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'r--', lw=2)
-    axs[0].set_xlabel("Actual")
-    axs[0].set_ylabel("Predicted")
-    axs[0].set_title("Predicted vs Actual")
-    axs[0].grid(True)
+    # Gráfico 1: Valores Reais vs. Previstos
+    plt.subplot(1, 3, 1)
+    sns.scatterplot(x=y_true, y=y_pred, alpha=0.6)
+    plt.plot([y_true.min(), y_true.max()], [y_true.min(), y_true.max()], 'r--')
+    plt.title('Valores Reais vs. Previstos')
+    plt.xlabel('Real')
+    plt.ylabel('Previsto')
     
-    # 2. Residuals Plot
-    axs[1].scatter(y_pred, residuals, color='green', alpha=0.6)
-    axs[1].axhline(0, color='red', linestyle='--', lw=2)
-    axs[1].set_xlabel("Predicted")
-    axs[1].set_ylabel("Residuals")
-    axs[1].set_title("Residual Plot")
-    axs[1].grid(True)
+    # Gráfico 2: Distribuição dos Resíduos
+    plt.subplot(1, 3, 2)
+    residuals = y_true - y_pred
+    sns.histplot(residuals, kde=True)
+    plt.title('Distribuição dos Resíduos')
+    plt.xlabel('Resíduo')
     
-    metrics_text = f"MSE: {mse:.2f}\nR²: {r2:.2f}"
-    plt.figtext(0.5, 0.01, metrics_text, wrap=True, horizontalalignment='center', fontsize=12)
-    plt.tight_layout(rect=[0, 0.05, 1, 1])
-    plt.savefig(f'{model_name}.png')
-    #plt.show()
+    # Gráfico 3: Feature Importance (apenas para Gradient Boosting)
+    if feature_importances is not None:
+        plt.subplot(1, 3, 3)
+        indices = np.argsort(feature_importances)[::-1]
+        features = feature_names if 'feature_names' in globals() else indices
+        plt.barh(range(len(indices)), feature_importances[indices], align='center')
+        plt.yticks(range(len(indices)), [features[i] for i in indices])
+        plt.title('Importância das Features')
+    
+    plt.tight_layout()
+    plt.savefig(f'{model_name}_evaluation.png')
+    plt.close()
 
-
-# Inicia a medição do tempo
 start_time = time.time()
 
+# 1. Carrega e pré-processa dados
+"""Carrega e pré-processa os dados"""
 current_dir = os.path.dirname(os.path.realpath(__file__))
-df_diamonds = pd.read_csv(os.path.join(current_dir, 'diamonds.csv'))
+df = pd.read_csv(os.path.join(current_dir, 'diamonds.csv'))
 
-# Visualiza as categorias das colunas
-columns = ['cut', 'color', 'clarity']
-dict_unique = {c: df_diamonds[c].unique() for c in columns}
-print("Categorias nas colunas:", dict_unique)
+# Engenharia de features: Adiciona volume
+df['volume'] = df['x'] * df['y'] * df['z']
 
-# Define o target 'price' e as features
-target_column = 'price'
-X = df_diamonds.drop(target_column, axis=1)
-y = df_diamonds[target_column]
+# Define ordens das categorias
+cut_order = ['Fair', 'Good', 'Very Good', 'Premium', 'Ideal']
+color_order = ['J', 'I', 'H', 'G', 'F', 'E', 'D']
+clarity_order = ['I1', 'SI2', 'SI1', 'VS2', 'VS1', 'VVS2', 'VVS1', 'IF']
 
-# Divide os dados em treino (80%) e teste (20%)
-X_train_full, X_test, y_train_full, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+X = df.drop('price', axis=1)
+y = df['price']
 
-# Define as colunas numéricas e categóricas
-numeric_features = ['carat', 'depth', 'table', 'x', 'y', 'z']
+# 2. Divide dados
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42)
+
+# 3. Configura CV
+outer_cv = KFold(n_splits=5, shuffle=True, random_state=42)
+inner_cv = KFold(n_splits=3, shuffle=True, random_state=42)
+
+# 4. Executa Nested CV
+# =============================================
+# 2. Definição do Pipeline e Espaços de Busca
+# =============================================
+
+"""Cria o pré-processador com codificação ordinal"""
+numeric_features = ['carat', 'depth', 'table', 'x', 'y', 'z', 'volume']
 categorical_features = ['cut', 'color', 'clarity']
 
-# Cria o pré-processador: StandardScaler para numéricas e OneHotEncoder para categóricas.
-preprocessor = ColumnTransformer(
+preprocessor =  ColumnTransformer(
     transformers=[
         ('num', StandardScaler(), numeric_features),
-        ('cat', OneHotEncoder(handle_unknown='ignore'), categorical_features)
-    ]
-)
-
-# Escolha dois modelos de aprendizado para regressão e defina os espaços de hiperparâmetros.
-# Note que os hiperparâmetros do modelo são referenciados como "model__param" (pois estão dentro do pipeline).
-model_configurations = [
-    {
-        'class_name': "KNeighborsRegressor",
-        'model_class': KNeighborsRegressor,
-        'param_grid':{
-            'model__n_neighbors': [3, 5, 7, 9],
-            'model__weights': ['uniform', 'distance']
-        }
-    },
-    {
-        'class_name': "GradientBoostingRegressor",
-        'model_class': GradientBoostingRegressor,
-        'param_grid': {
-            'model__n_estimators': [50, 100, 200],
-            'model__learning_rate': [0.01, 0.1, 0.2],
-            'model__max_depth': [3, 5]
-        },
-        'random_state': 42
-    }
-]
-
-# Configuração dos CV: outer CV com 5 folds e inner CV com 5 folds
-outer_cv = KFold(n_splits=5, shuffle=True, random_state=42)
-
-nested_results = []
-
-# Para cada candidato (modelo e seu espaço de hiperparâmetros)
-for config in model_configurations:
-    model_name = config['class_name']
-    print(f"\nProcessando candidato: {model_name}")
-    
-    # Se o modelo requer random_state, passa-o; caso contrário, instância sem parâmetro
-    if 'random_state' in config:
-        base_model = config['model_class'](random_state=config['random_state'])
-    else:
-        base_model = config['model_class']()
-    
-    # Cria o pipeline que integra o pré-processamento e o modelo
-    pipeline_candidate = Pipeline([
-        ('preprocessor', preprocessor),
-        ('model', base_model)
+        ('cat', OrdinalEncoder(categories=[cut_order, color_order, clarity_order]), 
+            categorical_features)
     ])
 
-    inner_cv = KFold(n_splits=5, shuffle=True, random_state=42)
-    # Configura a GridSearch para o inner CV
-    grid_search = GridSearchCV(estimator=pipeline_candidate,
-                               param_grid=config['param_grid'],
-                               cv=inner_cv,
-                               scoring='neg_mean_squared_error',
-                               n_jobs=-1)
+model_configs = [
+        {
+            'name': "KNeighborsRegressor",
+            'class': KNeighborsRegressor,
+            'params': {
+                'model__n_neighbors': randint(3, 20),
+                'model__weights': ['uniform', 'distance'],
+                'model__metric': ['euclidean', 'manhattan']
+            },
+            'random_state': False
+        },
+        {
+            'name': "GradientBoostingRegressor",
+            'class': GradientBoostingRegressor,
+            'params': {
+                'model__n_estimators': randint(100, 500),
+                'model__learning_rate': uniform(0.01, 0.19),
+                'model__max_depth': randint(3, 8),
+                'model__subsample': uniform(0.6, 0.4)
+            },
+            'random_state': True
+        }
+    ]
+
+results = []
+
+for config in model_configs:
+    # Configuração do pipeline
+    pipeline = Pipeline([
+        ('preprocessor', preprocessor),
+        ('model', config['class']())
+    ])
     
-    # Utiliza cross_val_score com o grid_search como estimador para realizar a outer CV.
-    scores = cross_val_score(grid_search, X_train_full, y_train_full,
-                             cv=outer_cv, scoring='neg_mean_squared_error', n_jobs=-1)
-    avg_rmse = sqrt(-np.mean(scores))
-    print(f"Média RMSE (Nested CV) para {model_name}: {avg_rmse:.4f}")
+    # Configuração da busca
+    search = RandomizedSearchCV(
+        estimator=pipeline,
+        param_distributions=config['params'],
+        n_iter=20,
+        cv=inner_cv,
+        scoring='neg_mean_squared_error',
+        n_jobs=-1,
+        random_state=42
+    )
     
-    # Ajusta o grid_search em todo o conjunto de treino para determinar os melhores hiperparâmetros.
-    grid_search.fit(X_train_full, y_train_full)
-    best_params = grid_search.best_params_
-    best_inner_rmse = sqrt(-grid_search.best_score_)
+    # Validação cruzada externa
+    cv_scores = cross_val_score(
+        search, X, y, 
+        cv=outer_cv, 
+        scoring='neg_mean_squared_error',
+        n_jobs=-1
+    )
     
-    nested_results.append({
-        'model': model_name,
-        'avg_rmse_nested': avg_rmse,
-        'best_params': best_params,
-        'best_inner_rmse': best_inner_rmse,
-        'best_estimator': grid_search.best_estimator_
+    # Armazena resultados
+    rmse_scores = np.sqrt(-cv_scores)
+    best_model = search.fit(X, y).best_estimator_
+    
+    results.append({
+        'model': config['name'],
+        'mean_rmse': rmse_scores.mean(),
+        'std_rmse': rmse_scores.std(),
+        'best_params': search.best_params_,
+        'best_estimator': best_model
     })
 
-# Converte os resultados da nested CV para um DataFrame e exibe
-df_nested = pd.DataFrame(nested_results)
-df_nested['rmse_mean'] = np.sqrt(-df_nested['mean_neg_mse'])
-df_nested['rmse_std']  = np.sqrt(df_nested['std_neg_mse'].abs())
+results_df = pd.DataFrame(results)
+# 5. Seleciona e avalia o melhor modelo
+best_model_info = results_df.loc[results_df['mean_rmse'].idxmin()]
+best_model = best_model_info['best_estimator']
 
-print("\nResultados da Nested Cross-Validation:")
-print(df_nested)
+# 6. Avaliação final no teste
+y_pred = best_model.predict(X_test)
+test_rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+test_r2 = r2_score(y_test, y_pred)
 
-# Seleciona o melhor candidato com base no menor RMSE médio na outer CV
-best_candidate = df_nested.loc[df_nested['avg_rmse_nested'].idxmin()]
-print("\nMelhor modelo selecionado via Nested CV:")
-print(f"Modelo: {best_candidate['model']}")
-print(f"RMSE médio (Nested): {best_candidate['avg_rmse_nested']:.4f}")
-print(f"Melhor hiperparâmetro: {best_candidate['best_params']}")
+# 7. Feature Importance
+feature_names = (X_train.columns.tolist())
+if 'GradientBoosting' in best_model_info['model']:
+    importances = best_model.named_steps['model'].feature_importances_
+else:
+    importances = None
 
-# Agora, com o melhor estimador (re-ajustado no conjunto de treino completo), obtenha as predições no conjunto de teste
-best_model_pipeline = best_candidate['best_estimator']
-y_pred_test = best_model_pipeline.predict(X_test)
-test_rmse = sqrt(mean_squared_error(y_test, y_pred_test))
-test_r2 = r2_score(y_test, y_pred_test)
+# 8. Gera visualizações
+model_evaluation(
+    best_model_info['model'], 
+    y_test, y_pred,
+    feature_importances=importances
+)
 
-print("\nAvaliação no conjunto de teste:")
-print(f"RMSE: {test_rmse:.4f}")
-print(f"R²: {test_r2:.4f}")
+print(f"\nMelhor modelo: {best_model_info['model']}")
+print(f"RMSE no teste: {test_rmse:.2f}")
+print(f"R² no teste: {test_r2:.2f}")
+print(f"Tempo total: {time.time()-start_time:.2f}s")
 
-# Gera os plots de avaliação (Predicted vs Actual, Residual Plot e métricas) para o modelo final
-model_final_name = best_candidate['model'] + "_final"
-model_evaluation_regression(model_final_name, y_test, y_pred_test)
+# import os
+# import numpy as np
+# import pandas as pd
+# import pickle
+# import matplotlib.pyplot as plt
+# from sklearn.linear_model import LinearRegression
+# from sklearn.tree import DecisionTreeRegressor
+# from sklearn.ensemble import RandomForestRegressor,  GradientBoostingClassifier
+# from sklearn.preprocessing import StandardScaler
+# from sklearn.metrics import (accuracy_score, classification_report, confusion_matrix, mean_absolute_error, mean_squared_error, r2_score)
+# from sklearn.compose import ColumnTransformer
+# from sklearn.pipeline import Pipeline
+# import time
+# import seaborn as sns
 
-# Análise dos resultados: podemos plotar um scatter com a média de RMSE dos candidatos (obtidos na nested CV)
-plt.figure(figsize=(8, 6))
-plt.scatter(df_nested['avg_rmse_nested'], df_nested['best_inner_rmse'], 
-            s=150, c='blue', alpha=0.7)
-for i, row in df_nested.iterrows():
-    plt.text(row['avg_rmse_nested']+0.01, row['best_inner_rmse']+0.01, 
-             f"{row['model']}\n{row['best_params']}", fontsize=9)
-plt.xlabel("RMSE Médio Outer CV (quanto menor melhor)")
-plt.ylabel("RMSE Melhor Inner CV (quanto menor melhor)")
-plt.title("Comparação dos Candidatos via Nested CV")
-plt.grid(True)
-plt.savefig('nested_cv_comparison.png')
-#plt.show()
+# def report_severity_metrics(y_true, y_pred):
+#     """
+#     Calcula e retorna as métricas para cada nível de severidade da precipitação.
+    
+#     Severidade:
+#       - sem_chuva_leve: 0 <= x < 5
+#       - moderada: 5 <= x < 25
+#       - forte: 25 <= x < 50
+#       - tempestade: x >= 50
+#     """
+#     # Converter as entradas para arrays 1D (unidimensionais)
+#     y_true = np.asarray(y_true).ravel()
+#     y_pred = np.asarray(y_pred).ravel()
+    
+#     severity_levels = {
+#         "sem_chuva_leve": (0, 5),
+#         "moderada": (5, 25),
+#         "forte": (25, 50),
+#         "tempestade": (50, np.inf)
+#     }
+#     report = {}
+#     for level, (low, high) in severity_levels.items():
+#         mask = (y_true >= low) & (y_true < high)
+#         count = np.sum(mask)
+#         if count > 0:
+#             mse = mean_squared_error(y_true[mask], y_pred[mask])
+#             mae = mean_absolute_error(y_true[mask], y_pred[mask])
+#             rmse = np.sqrt(mse)
+#             r2 = r2_score(y_true[mask], y_pred[mask])
+#             report[level] = {"count": int(count), "MAE": mae, "MSE": mse, "RMSE": rmse, "R2": r2}
+#         else:
+#             report[level] = {"count": 0, "MAE": None, "MSE": None, "RMSE": None, "R2": None}
+#     return report
 
-# Tempo total de processamento
-end_time = time.time()
-elapsed_time = end_time - start_time
-print(f"\nTempo total de processamento: {elapsed_time:.2f} segundos")
+# # Start time measurement
+# start_time = time.time()
+# current_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'A652.pickle')
+
+# f = open(current_dir, 'rb')
+# (X_train, y_train, X_val, y_val, X_test, y_test) = pickle.load(f) 
+
+# print(f"Shapes: {X_train.shape}, {X_test.shape}, {X_val.shape}")
+
+# # Transform continuous values into binary labels
+# y_train = np.where(y_train == 0, 0, 1)
+# y_val = np.where(y_val == 0, 0, 1)
+# y_test = np.where(y_test == 0, 0, 1)
+
+# # Define configuration variables
+# target = 'target'
+# scoring_type = 'accuracy'  # or 'f1', 'precision', 'recall'
+
+# # Convert arrays to DataFrames and Series, and create a single DataFrame for each set
+# df_train = pd.concat([pd.DataFrame(X_train), pd.Series(y_train.ravel(), name=target)], axis=1).reset_index(drop=True)
+# df_val = pd.concat([pd.DataFrame(X_val), pd.Series(y_val.ravel(), name=target)], axis=1).reset_index(drop=True)
+# df_test = pd.concat([pd.DataFrame(X_test), pd.Series(y_test.ravel(), name=target)], axis=1).reset_index(drop=True)
+
+# df_global_train = pd.concat([df_train, df_val], axis=0, ignore_index=True)
+
+# # Separate features (X) and labels (y) for each set
+# X_train_data = df_train.drop(columns=[target])
+# y_train_data = df_train[target].values
+
+# X_val_data = df_val.drop(columns=[target])
+
+# X_test_data = df_test.drop(columns=[target])
+
+# # Preprocessing and scaling configuration
+# scaler_config = {'scaler_name': 'StandardScaler'}
+# feature_columns = X_train_data.columns.tolist()
+
+# preprocessor = ColumnTransformer(
+#     transformers=[
+#         ('scaler', StandardScaler(), feature_columns)
+#     ]
+# )
+
+# # Definir as configurações dos modelos
+# model_classifiers = [
+#     {
+#         'class_name': "GradientBoostingClassifier",
+#         'model_class': GradientBoostingClassifier,
+#         # 'tuning_parameter': 'learning_rate',
+#         # 'random_state': 42,
+#         # 'parameter_range': [0.1, 0.01, 0.001],
+#     }
+# ]
+
+# #Spling the data into train and test sets
+# sampling_configs = [
+#     {"sampling_name": "Threshold", 'sampling_class': np.arange(0.1, 1.0, 0.05)},
+# ]
+
+# results = []
+
+# # ----------------
+# # Main loop: For each model, for each sampling technique, and for each tuning parameter value…
+# for model_config in model_classifiers:
+#     model_class_name = model_config['class_name']
+#     # tuning_param = model_config['tuning_parameter']
+    
+#     for sampling_config in sampling_configs:
+#         sampling_name = sampling_config['sampling_name']
+        
+#         # for param in model_config['parameter_range']:
+#         print(f"\nRunning: Model={model_config['class_name']}, Sampling={sampling_name}")
+#         set_name = f"{model_class_name}&{sampling_name}"
+        
+#         # No sampling applied, train on the standard pipeline and then adjust the threshold
+#         model = model_config['model_class']()
+#         pipeline_model = Pipeline([
+#             ('preprocessor', preprocessor),
+#             ('classifier', model)
+#         ])
+#         pipeline_model.fit(X_train_data, y_train_data)
+#         # Get probabilities on the validation set
+#         y_proba = pipeline_model.predict_proba(X_val_data)[:, 1]
+        
+#         for threshold in sampling_config['sampling_class']:
+#             y_pred = (y_proba >= threshold).astype(int)
+#             cm = confusion_matrix(df_val[target], y_pred).tolist()
+#             acc = accuracy_score(df_val[target], y_pred)
+#             print(f"  Threshold={threshold:.1f} -> Accuracy: {acc:.4f}")
+#             class_report = classification_report(df_val[target], y_pred, output_dict=True)
+#             results.append({
+#                 "Model": set_name,
+#                 "Accuracy": acc,
+#                 'sampling': sampling_name,
+#                 'scaler': scaler_config['scaler_name'],
+#                 "threshold": threshold,
+#                 "Confusion_Matrix": cm,
+#                 "Tp": cm[0][0],
+#                 "Fp": cm[0][1],
+#                 "Fn": cm[1][0],
+#                 "Tn": cm[1][1],
+#                 "Classification_Report": class_report,
+#                 "MAE": mean_absolute_error(df_val[target], y_pred),
+#                 "MSE": mean_squared_error(df_val[target], y_pred),
+#                 "RMSE": np.sqrt(mean_squared_error(df_val[target], y_pred)),
+#                 "Y": df_val[target].tolist(),
+#                 "YPred": y_pred.tolist()
+#             })
+        
+#         print("\n")
+            
+# best_result = max(results, key=lambda x: x["Classification_Report"].get("1", {}).get("f1-score", 0))
+# print("------------------------------------------------------")
+# print("Best configuration obtained:")
+# print(best_result["Model"])
+# print("F1 score for class 1:", best_result["Classification_Report"].get("1", {}).get("f1-score", 0))
+# print("Threshold:", best_result["threshold"])
+
+# # Get the components of the string identifying the configuration
+# set_name = best_result["Model"]   # Ex.: "GradientBoostingClassifier&learning_rate&0.1&SMOTE"
+# components = set_name.split("&")
+# model_class_str = components[0]
+
+
+# sampling_name = components[1]
+
+# # Model mapping (here we only have GradientBoostingClassifier, but if there are more, add them)
+# model_class = model_classifiers[0]['model_class']
+
+# best_threshold = best_result["threshold"]
+# model_C = model_class()
+
+# preprocessor = ColumnTransformer(
+#     transformers=[
+#         ('scaler', StandardScaler(), feature_columns)
+#     ]
+# )
+
+# pipeline_C = Pipeline([
+#     ('preprocessor', preprocessor),
+#     ('classifier', model)
+# ])
+
+# X_global_train = df_global_train.drop(columns=[target])
+# y_global_train = df_global_train[target]
+
+# pipeline_C.fit(X_global_train, y_global_train)
+# y_train_pred = pipeline_C.predict(X_global_train) 
+# #O método .predict() gera os rótulos preditos (por exemplo, 0 ou 1 em um problema de classificação) 
+# # para cada exemplo contido em X_global_train e armazena esses valores na variável y_train_pred.
+
+# # Obter as predições e probabilidades do classificador "C"
+# y_proba = pipeline_model.predict_proba(X_global_train)[:, 1] 
+# #Ao usar [:, 1], você está extraindo a segunda coluna da matriz, 
+# # ou seja, as probabilidades relativas à classe 1 para cada exemplo.
+# #  Esses valores são então armazenados na variável y_proba.
+
+# # Aqui, inicialmente usamos um threshold fixo (por exemplo, 0.5)
+# default_threshold = 0.5  
+# y_pred = (y_proba >= default_threshold).astype(int)
+
+# # Agora, extraia os exemplos classificados como 1
+# mask = (y_pred == 1)
+# X_train_1 = X_global_train[mask]
+# y_train_1 = y_global_train[mask]
+
+# print(f"Número de exemplos classificados como 1 após ajuste: {mask.sum()}")
+
+
+# # --- Parte 2: Treinamento do Regressor (R) – Modelo Híbrido ---
+# # Definir configurações dos modelos de regressão
+# model_regression = [
+#     { 
+#         'class_name': "LinearRegression", 
+#         'model_class': LinearRegression,
+#         'params': {}
+#     },
+#     { 
+#         'class_name': "DecisionTreeRegressor", 
+#         'model_class': DecisionTreeRegressor,
+#         'params': {'random_state': 42}
+#     },
+#     { 
+#         'class_name': "RandomForestRegressor", 
+#         'model_class': RandomForestRegressor,
+#         'params': {'n_estimators': 100, 'random_state': 42}
+#     },
+# ]
+
+# final_results = []
+# for model_config in model_regression:
+#     model_class_name = model_config['class_name']
+    
+#     for sampling_config in sampling_configs:
+#         sampling_name = sampling_config['sampling_name']
+#         # Se não houver iteração de parâmetros, usamos [None]
+#         for param_reg in model_config.get('parameter_range', [None]):
+#             print(f"\nRodando: Modelo={model_class_name}"
+#                   f"={param_reg} Sampling={sampling_name}")
+            
+#             # Para relatório, definimos um identificador:
+#             # set_name = f"{model_class_name}&{model_config.get('tuning_parameter','')}&{param_reg}&{sampling_name}"
+#             set_name = f"{model_class_name}&{param_reg}&{sampling_name}"
+            
+#             # Preparar os parâmetros do modelo de regressão
+#             model_params_R = model_config['params'].copy()
+
+            
+#             # Instanciar e treinar o modelo de regressão em (X_train_1, y_train_1)
+#             model_R = model_config['model_class'](**model_params_R)
+#             pipeline_R = Pipeline([
+#                 ('preprocessor', preprocessor),
+#                 ('regressor', model_R)
+#             ])
+#             pipeline_R.fit(X_train_1, y_train_1)
+#             print("Modelo de regressão (R) treinado.")
+            
+#             # Obter as predições do regressor para os dados de teste
+#             # X_test (não processado) será utilizado; o pré-processador fará o escalonamento
+#             y_pred_reg = pipeline_R.predict(X_test)
+#             # Obter as predições do classificador C para os mesmos dados de teste
+#             y_pred_class = pipeline_C.predict(X_test)
+#             # Combinar os resultados: se o classificador prever 0, a predição final é 0; senão, usa a predição do regressor.
+#             y_pred_final = np.where(y_pred_class == 0, 0, y_pred_reg)
+            
+#             # Para avaliação, compare y_pred_final com os valores contínuos reais do teste (y_test)
+#             mse = mean_squared_error(y_test, y_pred_final)
+#             mae = mean_absolute_error(y_test, y_pred_final)
+#             rmse = np.sqrt(mse)
+#             r2   = r2_score(y_test, y_pred_final)
+            
+#             # Criar um relatório de métricas por severidade
+#             severity_report = report_severity_metrics(y_test, y_pred_final)
+            
+#             final_results.append({
+#                 "Model": set_name,
+#                 "MAE": mae,
+#                 "MSE": mse,
+#                 "RMSE": rmse,
+#                 "R2": r2,
+#                 "Severity_Report": severity_report
+#             })
+#             print(f"Modelo: {set_name}, RMSE: {rmse:.4f}, R2: {r2:.4f}")
+  
+# # Converter os resultados finais para DataFrame e exibir
+# df_final_results = pd.DataFrame(final_results)
+# print("\nResultados finais dos modelos de regressão (modelo híbrido):")
+# print(df_final_results)
+
+# # =============================================================================
+# # Seleção do melhor modelo (por exemplo, o com menor RMSE)
+# # =============================================================================
+# best_model_result = df_final_results.loc[df_final_results['RMSE'].idxmin()]
+# print("\nMelhor modelo selecionado:")
+# print(best_model_result)
+
+# # Você pode também salvar os resultados, se necessário:
+# results_json_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'final_results.json')
+# df_final_results.to_json(results_json_path, orient='records', lines=True)
+
+# end_time = time.time()
+# print(f"\nTempo total de execução: {end_time - start_time:.2f} segundos")

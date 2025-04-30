@@ -17,6 +17,52 @@ from imblearn.under_sampling import RandomUnderSampler, NearMiss, ClusterCentroi
 from imblearn.combine import SMOTEENN, SMOTETomek
 import time
 
+def plot_results(phase, result):
+    # Configurações gerais
+    plt.figure(figsize=(12, 5))
+    sns.set_theme(style="whitegrid")
+    
+    # Plot 1: Matriz de Confusão
+    plt.subplot(1, 2, 1)
+    cm = result["Confusion_Matrix"]
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
+                xticklabels=['Pred 0', 'Pred 1'], 
+                yticklabels=['True 0', 'True 1'])
+    plt.title(f'Matriz de Confusão ({phase})')
+    plt.ylabel('Verdadeiro')
+    plt.xlabel('Previsto')
+    
+    # Plot 2: Métricas de Classificação
+    plt.subplot(1, 2, 2)
+    report = result["Classification_Report"]
+    metrics = ['precision', 'recall', 'f1-score']
+    classes = ['0', '1', 'accuracy']
+    scores = []
+    for cls in classes:
+        if cls in report:
+            if cls == 'accuracy':
+                scores.append(report[cls])
+            else:
+                scores.extend([report[cls][metric] for metric in metrics])
+    
+    # Ajuste para incluir 'accuracy'
+    labels = []
+    for cls in ['0', '1']:
+        for metric in metrics:
+            labels.append(f"{cls} {metric}")
+    labels.append('accuracy')
+    
+    sns.barplot(x=labels, y=scores, palette="viridis")
+    plt.xticks(rotation=45, ha='right')
+    plt.title(f'Métricas ({phase})')
+    plt.ylim(0, 1)
+    plt.tight_layout()
+    
+    # plt.show()
+    # Para salvar a figura em vez de mostrar:
+    plt.savefig(f'resultados_{phase}.png')
+    plt.close()
+
 # Start time measurement
 start_time = time.time()
 current_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'A652.pickle')
@@ -64,7 +110,7 @@ model_configurations = [
         'model_class': GradientBoostingClassifier,
         'tuning_parameter': 'learning_rate',
         'random_state': 42,
-        'parameter_range': [0.1, 0.01, 0.001],
+        'parameter_range': [0.1, 0.05, 0.01, 0.005, 0.001],
     }
 ]
 
@@ -78,8 +124,8 @@ sampling_configs = [
     {"sampling_name": "TomekLinks", 'sampling_class': TomekLinks()},
     {"sampling_name": "SMOTEENN", 'sampling_class': SMOTEENN(random_state=42)},
     {"sampling_name": "SMOTETomek", 'sampling_class': SMOTETomek(random_state=42)},
-    {"sampling_name": "Threshold", 'sampling_class': np.arange(0.1, 1.0, 0.1)},
-    {"sampling_name": "Without", 'sampling_class': None},
+    {"sampling_name": "Threshold", 'sampling_class': np.arange(0.1, 1.0, 0.05)},
+    {"sampling_name": "NoSampling", 'sampling_class': None},
 ]
 
 results = []
@@ -133,7 +179,7 @@ for model_config in model_configurations:
                         "YPred": y_pred.tolist()
                     })
             else:       
-                if sampling_name != "Without":
+                if sampling_name != "NoSampling":
                     # For balancing techniques (except Threshold), use an imblearn pipeline
                     sampler = sampling_config['sampling_class']
                     model = model_config['model_class'](**{tuning_param: param}, random_state=model_config['random_state'])
@@ -143,7 +189,7 @@ for model_config in model_configurations:
                         ('classifier', model)
                     ])
                 else:
-                    # Without any balancing (technique 'Without')
+                    # NoSampling any balancing (technique 'NoSampling')
                     model = model_config['model_class'](**{tuning_param: param}, random_state=model_config['random_state'])
                     pipeline_model = Pipeline([
                         ('preprocessor', preprocessor),
@@ -219,7 +265,7 @@ if sampling_name == "Threshold":
     pipeline_best.fit(X_train_merged, y_train_merged)
     y_proba_test = pipeline_best.predict_proba(X_test_data)[:, 1]
     y_pred_test = (y_proba_test >= best_threshold).astype(int)
-elif sampling_name != "Without":
+elif sampling_name != "NoSampling":
     sampler_mapping = {
         "SMOTE": SMOTE(random_state=42),
         "ADASYN": ADASYN(random_state=42),
