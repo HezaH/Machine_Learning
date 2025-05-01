@@ -64,10 +64,17 @@ def model_evaluation_regression(model_name, y_test, y_pred):
 # Inicia a medição do tempo
 start_time = time.time()
 
-current_dir = os.path.dirname(os.path.realpath(__file__))
-df_diamonds = pd.read_csv(os.path.join(current_dir,'diamonds.csv'))
+try:
+    df_diamonds = pd.read_csv('diamonds.csv')
+except FileNotFoundError:
+    current_dir = os.path.dirname(os.path.realpath(__file__))
+    df_diamonds = pd.read_csv(os.path.join(current_dir,'diamonds.csv'))
 
 df_diamonds.head()
+
+# Engenharia de features: Adiciona volume
+df_diamonds['volume'] = df_diamonds['x'] * df_diamonds['y'] * df_diamonds['z']
+
 columns = ['cut', 'color', 'clarity']
 dict_unique = {}
 for c in columns:
@@ -77,6 +84,8 @@ print(dict_unique)
 target_column = 'price'
 X = df_diamonds.drop(target_column, axis=1)
 y = df_diamonds[target_column]
+
+
 
 # Divide os dados em treino (80%) e teste (20%)
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
