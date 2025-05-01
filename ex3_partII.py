@@ -47,6 +47,25 @@ def report_severity_metrics(y_true, y_pred):
             report[level] = {"count": 0, "MAE": None, "MSE": None, "RMSE": None, "R2": None}
     return report
 
+def plot_severity_metrics(severity_report, model_name):
+    """Plota métricas por nível de severidade"""
+    levels = list(severity_report.keys())
+    metrics = ['MAE', 'RMSE', 'R2']
+    
+    plt.figure(figsize=(15, 5))
+    for i, metric in enumerate(metrics, 1):
+        plt.subplot(1, 3, i)
+        values = [severity_report[level][metric] for level in levels]
+        sns.barplot(x=levels, y=values, palette='viridis')
+        plt.title(metric)
+        plt.xticks(rotation=45)
+        plt.ylabel(metric)
+    
+    plt.suptitle(f'Métricas por Severidade - {model_name}')
+    plt.tight_layout()
+    plt.savefig(f'severity_metrics_{model_name}.png')
+    plt.close()
+
 # Start time measurement
 start_time = time.time()
 current_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'A652.pickle')
@@ -289,6 +308,7 @@ for model_config in model_regression:
                 "R2": r2,
                 "Severity_Report": severity_report
             })
+            plot_severity_metrics(severity_report, set_name )
             print(f"Modelo: {set_name}, RMSE: {rmse:.4f}, R2: {r2:.4f}")
   
 # Converter os resultados finais para DataFrame e exibir
@@ -385,24 +405,7 @@ print(f"\nTempo total de execução: {end_time - start_time:.2f} segundos")
 #     plt.savefig(f'plots/regression_performance_{model_name}.png')
 #     plt.close()
 
-# def plot_severity_metrics(severity_report, model_name):
-#     """Plota métricas por nível de severidade"""
-#     levels = list(severity_report.keys())
-#     metrics = ['MAE', 'RMSE', 'R2']
-    
-#     plt.figure(figsize=(15, 5))
-#     for i, metric in enumerate(metrics, 1):
-#         plt.subplot(1, 3, i)
-#         values = [severity_report[level][metric] for level in levels]
-#         sns.barplot(x=levels, y=values, palette='viridis')
-#         plt.title(metric)
-#         plt.xticks(rotation=45)
-#         plt.ylabel(metric)
-    
-#     plt.suptitle(f'Métricas por Severidade - {model_name}')
-#     plt.tight_layout()
-#     plt.savefig(f'plots/severity_metrics_{model_name}.png')
-#     plt.close()
+
 
 # def plot_feature_importance(model, feature_names, model_name):
 #     """Plota importância das features para modelos que suportam"""

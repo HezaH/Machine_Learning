@@ -5,7 +5,7 @@ import os
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.compose import ColumnTransformer
-from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.preprocessing import StandardScaler, OneHotEncoder, OrdinalEncoder
 from sklearn.metrics import mean_squared_error, r2_score
 
 # Importação dos modelos
@@ -81,18 +81,44 @@ y = df_diamonds[target_column]
 # Divide os dados em treino (80%) e teste (20%)
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-# Definindo as colunas numéricas e categóricas
-numeric_features = ['carat', 'depth', 'table', 'x', 'y', 'z']
-categorical_features = ['cut', 'color', 'clarity']
 
-# Cria o pré-processador: para as numéricas utiliza StandardScaler e para as categóricas OneHotEncoder
-preprocessor = ColumnTransformer(
+"""Cria o pré-processador com codificação ordinal"""
+numeric_features = ['carat', 'depth', 'table', 'x', 'y', 'z', 'volume']
+categorical_features = ['cut', 'color', 'clarity']
+# Define ordens das categorias
+cut_order = ['Fair', 'Good', 'Very Good', 'Premium', 'Ideal']
+color_order = ['J', 'I', 'H', 'G', 'F', 'E', 'D']
+clarity_order = ['I1', 'SI2', 'SI1', 'VS2', 'VS1', 'VVS2', 'VVS1', 'IF']
+
+preprocessor =  ColumnTransformer(
     transformers=[
         ('num', StandardScaler(), numeric_features),
-        ('cat', OneHotEncoder(handle_unknown='ignore'), categorical_features)
-    ]
-)
+        ('cat', OrdinalEncoder(categories=[cut_order, color_order, clarity_order]), 
+            categorical_features)
+    ])
 
+# Define model configurations; include tuning keys for models that require parameter tuning.
+model_configurations = [
+    {
+        'class_name': "KNeighborsRegressor",
+        'model_class': KNeighborsRegressor,
+        'tuning_parameter': 'n_neighbors',
+        'parameter_range': [5]
+        # 'parameter_range': list(range(5, 10, 5))
+    },
+    {
+        'class_name': "LogisticRegression",
+        'model_class': LogisticRegression
+    },
+    {
+        'class_name': "GradientBoostingRegressor",
+        'model_class': GradientBoostingRegressor,
+        'tuning_parameter': 'n_estimators',
+        'parameter_range': [50],
+        # 'parameter_range': list(range(50, 100, 50)),
+        'random_state': 42
+    }
+]
 # Define model configurations; include tuning keys for models that require parameter tuning.
 model_configurations = [
     {

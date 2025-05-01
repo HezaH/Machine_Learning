@@ -434,24 +434,3 @@ def cross_validate_models(model_configurations, scaler_configs, spling_configs, 
     
     return df_scores
 
-def plot_confusion_matrix_from_values(tp, tn, fp, fn, labels=['Negativo', 'Positivo'], title='Matriz de Confusão'):
-    """
-    Plota a matriz de confusão a partir dos valores TP, TN, FP, FN.
-
-    Parâmetros:
-    - tp: Verdadeiros Positivos
-    - tn: Verdadeiros Negativos
-    - fp: Falsos Positivos
-    - fn: Falsos Negativos
-    - labels: Lista com os rótulos das classes [Negativo, Positivo]
-    - title: Título do gráfico
-    """
-    cm = np.array([[tn, fp],
-                   [fn, tp]])
-
-    plt.figure(figsize=(6, 5))
-    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=labels, yticklabels=labels)
-    plt.xlabel('Classe Predita')
-    plt.ylabel('Classe Real')
-    plt.title(title)
-    plt.show()

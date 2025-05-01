@@ -15,9 +15,7 @@ from sklearn.compose import ColumnTransformer
 from sklearn.metrics import (roc_curve, roc_auc_score, confusion_matrix, 
                              accuracy_score, precision_score, recall_score, f1_score,
                              brier_score_loss)
-from utils import (
-    get_model_scores, plot_confusion_matrix_from_values)
-
+import seaborn as sns
 
 def plot_calibration_curve(y_test, y_prob, plot_title, method_label="", n_bins=15):
     disp = CalibrationDisplay.from_predictions(y_test, 
@@ -103,6 +101,29 @@ def select_best_calibration(result_list):
             best_score = score
             best_config = res
     return best_config
+
+
+def plot_confusion_matrix_from_values(tp, tn, fp, fn, labels=['Negativo', 'Positivo'], title='Matriz de Confusão'):
+    """
+    Plota a matriz de confusão a partir dos valores TP, TN, FP, FN.
+
+    Parâmetros:
+    - tp: Verdadeiros Positivos
+    - tn: Verdadeiros Negativos
+    - fp: Falsos Positivos
+    - fn: Falsos Negativos
+    - labels: Lista com os rótulos das classes [Negativo, Positivo]
+    - title: Título do gráfico
+    """
+    cm = np.array([[tn, fp],
+                   [fn, tp]])
+
+    plt.figure(figsize=(6, 5))
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=labels, yticklabels=labels)
+    plt.xlabel('Classe Predita')
+    plt.ylabel('Classe Real')
+    plt.title(title)
+    plt.show()
 
 # Start timing
 start_time = time.time()
@@ -237,14 +258,26 @@ for config in model_configurations:
         # Calculate ROC curves and ROC AUC
         fpr_val, tpr_val, thresholds_val = roc_curve(y_val, y_proba_val)
         roc_auc_val = roc_auc_score(y_val, y_proba_val)
+        
+        closest_val = np.sqrt(fpr_val**2 + (1 - tpr_val)**2)
+        gmeans_val = np.sqrt(tpr_val * (1 - fpr_val))
+        young_val = tpr_val + (1 - fpr_val) - 1
+
         fpr_test, tpr_test, thresholds_test = roc_curve(y_test, y_proba_test)
         roc_auc_test = roc_auc_score(y_test, y_proba_test)
         
-        # Determine the best threshold on the validation set based on G-mean
-        gmeans = np.sqrt(tpr_val * (1 - fpr_val))
-        ix = np.argmax(gmeans)
-        best_threshold = thresholds_val[ix]
-        print(f"Best threshold (Validation) for {model_class_name} with calibration '{calib_name}': {best_threshold:.4f} | G-Mean: {gmeans[ix]:.4f}")
+        closest_test = np.sqrt(fpr_test**2 + (1 - tpr_test)**2)
+        gmeans_test = np.sqrt(tpr_test * (1 - fpr_test))
+        young_test = tpr_test + (1 - fpr_test) - 1
+        
+        # Determine the best threshold on the youg
+        ix_val = np.argmax(young_val)
+        best_threshold_val = thresholds_val[ix_val]
+        print(f"Best threshold (Val) for {model_class_name} with calibration '{calib_name}': {best_threshold_val:.4f} | Young: {young_test[ix_val]:.4f}")
+        
+        ix_test = np.argmax(young_test)
+        best_threshold_test = thresholds_test[ix_test]
+        print(f"Best threshold (Test) for {model_class_name} with calibration '{calib_name}': {best_threshold_test:.4f} | Young: {young_test[ix_test]:.4f}")
         
         # Plot confusion matrix for the test set (fixed threshold 0.5)
         cm = confusion_matrix(y_test, (y_proba_test >= 0.5).astype(int))
@@ -273,7 +306,7 @@ for config in model_configurations:
             'f1': f1,
             'roc_auc_val': roc_auc_val,
             'roc_auc_test': roc_auc_test,
-            'best_threshold': best_threshold,
+            'best_threshold': best_threshold_test,
         }
         # Merge calibration metrics into the result dictionary
         result_item.update(calibration_metrics)
@@ -310,7 +343,8 @@ for config in model_configurations:
     plt.plot([0, 1], [0, 1], linestyle='--', color='gray', label='Baseline')
     plt.plot(fpr_val, tpr_val, label=f"Validation (AUC = {roc_auc_val:.2f})")
     plt.plot(fpr_test, tpr_test, label=f"Test (AUC = {roc_auc_test:.2f})")
-    plt.scatter(fpr_val[ix], tpr_val[ix], marker='o', color='black', label=f"Best threshold (Val): {best_threshold:.2f}")
+    plt.scatter(fpr_val[ix_val], tpr_val[ix_val], marker='o', color='black', label=f"Best threshold (Val): {best_threshold_val:.2f}")
+    plt.scatter(fpr_test[ix_test], tpr_test[ix_test], marker='x', color='black', label=f"Best threshold (test): {best_threshold_test:.2f}")
     plt.xlabel("False Positive Rate")
     plt.ylabel("True Positive Rate")
     plt.title(f"ROC Curve - {model_class_name}")
