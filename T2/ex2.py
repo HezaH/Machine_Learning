@@ -7,7 +7,6 @@ from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.metrics import confusion_matrix, classification_report
 from sklearn.preprocessing import LabelEncoder
 
-
 def predict_ordinal(df, classifiers, features):
     preds = []
     for clf in classifiers:
@@ -38,7 +37,6 @@ def predict_ordinal(df, classifiers, features):
     mapping_inv = {v: k for k, v in choices.items()}
     pred_labels = [mapping_inv[i] for i in pred_idx]
     return pred_labels, prob_classes
-
 
 def change_cathegory(df, choices):
     """
@@ -76,7 +74,6 @@ def change_cathegory(df, choices):
         
     return df, new_choices
 
-
 # Inicia a medição do tempo
 start_time = time.time()
 
@@ -109,6 +106,7 @@ df_test = pd.concat([
 # Dicionário base com a ordem desejada
 choices = {"NONE": 0, "WEAK": 1, "MODERATE": 2, "STRONG": 3}#, "EXTREME": 4}
 
+print(f"Categorias: {choices.keys()}")
 # Aplica a transformação em cada DataFrame
 df_train, new_choices_train = change_cathegory(df_train, choices)
 df_val, new_choices_val   = change_cathegory(df_val, choices)
@@ -123,12 +121,14 @@ features = [col for col in df_train.columns if col not in exclude_cols]
 # Modelo Ordinal
 ###########################
 ordinal_classifiers = []  # Lista para armazenar os modelos treinados
-
+print("== Treinamento do Modelo Ordinal ==")
 for i in range(1, n_threshold + 1):
     clf = GradientBoostingClassifier(random_state=42)
     # Aqui, cada target é a coluna T_i (0 ou 1)
     clf.fit(df_train[features], df_train[f'T_{i}'])
     ordinal_classifiers.append(clf)
+
+print(f"Modelos treinados: {len(ordinal_classifiers)}")
 
 # Previsão no conjunto de teste usando o modelo ordinal
 ord_pred_labels, ord_pred_numbers = predict_ordinal(df_test, ordinal_classifiers, features)
@@ -142,7 +142,7 @@ print(classification_report(df_test["categoria"], ord_pred_labels))
 ###########################
 # Modelo Nominal (Tradicional)
 ###########################
-
+print("== Treinamento do Modelo Nominal ==")
 # Tratando as classes como nominais, usamos a coluna "categoria" e um LabelEncoder.
 le = LabelEncoder()
 df_train["cat_nominal"] = le.fit_transform(df_train["categoria"])
@@ -151,7 +151,7 @@ df_test["cat_nominal"]  = le.transform(df_test["categoria"])
 
 nominal_clf = GradientBoostingClassifier(random_state=42)
 nominal_clf.fit(df_train[features], df_train["cat_nominal"])
-
+print("Modelo nominal treinado.")
 nom_pred = nominal_clf.predict(df_test[features])
 nom_pred_labels = le.inverse_transform(nom_pred)
 

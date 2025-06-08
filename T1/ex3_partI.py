@@ -5,9 +5,6 @@ import seaborn as sns
 import json
 import matplotlib.pyplot as plt
 import pickle
-from sklearn.ensemble import GradientBoostingClassifier
-from sklearn.metrics import confusion_matrix, classification_report
-from sklearn.preprocessing import LabelEncoder
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
@@ -76,9 +73,9 @@ f = open(current_dir, 'rb')
 print(f"Shapes: {X_train.shape}, {X_test.shape}, {X_val.shape}")
 
 # Transform continuous values into binary labels
-# y_train = np.where(y_train == 0, 0, 1)
-# y_val = np.where(y_val == 0, 0, 1)
-# y_test = np.where(y_test == 0, 0, 1)
+y_train = np.where(y_train == 0, 0, 1)
+y_val = np.where(y_val == 0, 0, 1)
+y_test = np.where(y_test == 0, 0, 1)
 
 # Define configuration variables
 target = 'target'
@@ -88,38 +85,6 @@ scoring_type = 'accuracy'  # or 'f1', 'precision', 'recall'
 df_train = pd.concat([pd.DataFrame(X_train), pd.Series(y_train.ravel(), name=target)], axis=1).reset_index(drop=True)
 df_val = pd.concat([pd.DataFrame(X_val), pd.Series(y_val.ravel(), name=target)], axis=1).reset_index(drop=True)
 df_test = pd.concat([pd.DataFrame(X_test), pd.Series(y_test.ravel(), name=target)], axis=1).reset_index(drop=True)
-
-# Define as escolhas correspondentes para cada condição
-choices = {"NONE": 0, "WEAK": 1, "MODERATE": 2, "STRONG": 3, "EXTREME": 4}
-
-def change_cathegory(df, choices):
-    # Define as condições de acordo com os intervalos para a coluna "target"
-    conditions = [
-        (df["target"] == 0),
-        ((df["target"] > 0) & (df["target"] <= 5)),
-        ((df["target"] > 5) & (df["target"] <= 25)),
-        ((df["target"] > 25) & (df["target"] <= 50)),
-        (df["target"] > 50)
-    ]
-    
-    # Cria a coluna "categoria" com base nas condições
-    df["categoria"] = np.select(conditions, choices.keys(), default=np.nan)
-    
-    # Mapeia as categorias para valores numéricos (ordem)
-    df["cat_code"] = df["categoria"].map(choices)
-    
-    # Número de classificações binárias a criar (k - 1)
-    n = len(choices) - 1  # aqui n = 4
-    
-    # Cria as colunas T_1, T_2, ..., T_n
-    # Cada coluna T_i indica se o código ordinal é maior que (i-1)
-    for i in range(n):
-        df[f'T_{i+1}'] = (df["cat_code"] > i).astype(int)
-        
-    return df
-
-for df in [df_train, df_val, df_test]:
-    df = change_cathegory(df, choices)
 
 # Separate features (X) and labels (y) for each set
 X_train_data = df_train.drop(columns=[target])
