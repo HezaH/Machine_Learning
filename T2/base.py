@@ -52,8 +52,9 @@ def change_cathegory(df, choices):
         (df["target"] == 0),
         ((df["target"] > 0) & (df["target"] <= 5)),
         ((df["target"] > 5) & (df["target"] <= 25)),
-        ((df["target"] > 25) & (df["target"] <= 50)),
-        (df["target"] > 50)
+        (df["target"] > 25)
+        # ((df["target"] > 25) & (df["target"] <= 50)),
+        # (df["target"] > 50)
     ]
     
     # Aplica o np.select usando todas as categorias do dicionário base
@@ -106,7 +107,7 @@ df_test = pd.concat([
 ], axis=1).reset_index(drop=True)
 
 # Dicionário base com a ordem desejada
-choices = {"NONE": 0, "WEAK": 1, "MODERATE": 2, "STRONG": 3, "EXTREME": 4}
+choices = {"NONE": 0, "WEAK": 1, "MODERATE": 2, "STRONG": 3}#, "EXTREME": 4}
 
 # Aplica a transformação em cada DataFrame
 df_train, new_choices_train = change_cathegory(df_train, choices)
