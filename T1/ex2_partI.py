@@ -85,11 +85,8 @@ target_column = 'price'
 X = df_diamonds.drop(target_column, axis=1)
 y = df_diamonds[target_column]
 
-
-
 # Divide os dados em treino (80%) e teste (20%)
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-
 
 """Cria o pré-processador com codificação ordinal"""
 numeric_features = ['carat', 'depth', 'table', 'x', 'y', 'z', 'volume']
@@ -99,7 +96,7 @@ cut_order = ['Fair', 'Good', 'Very Good', 'Premium', 'Ideal']
 color_order = ['J', 'I', 'H', 'G', 'F', 'E', 'D']
 clarity_order = ['I1', 'SI2', 'SI1', 'VS2', 'VS1', 'VVS2', 'VVS1', 'IF']
 
-preprocessor =  ColumnTransformer(
+preprocessor = ColumnTransformer(
     transformers=[
         ('num', StandardScaler(), numeric_features),
         ('cat', OrdinalEncoder(categories=[cut_order, color_order, clarity_order]), 
