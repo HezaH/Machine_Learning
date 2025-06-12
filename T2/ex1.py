@@ -88,7 +88,7 @@ plt.xlabel("Valores Reais de z")
 plt.ylabel("Valores Preditos de z")
 plt.title("Comparação entre Valores Reais e Preditos")
 plt.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'r--')
-plt.savefig("compare_z.png", dpi=300, bbox_inches='tight')
+plt.savefig(os.path.join(os.path.dirname(os.path.realpath(__file__)), "figures", "compare_z_ex1.png"), dpi=300, bbox_inches='tight')
 plt.close()  # Fecha o gráfico atual
 
 # Se houver registros com z igual a 0, prevê os valores de z para esses registros.
@@ -134,7 +134,7 @@ axins.set_xlim(0, 800)         # Limita o eixo x do inset
 axins.set_ylim(0, 25000)       # Limita o eixo y do inset
 mark_inset(ax, axins, loc1=2, loc2=4, fc="none", ec="0.4")
 
-plt.savefig("value_price.png", dpi=300, bbox_inches='tight')
+plt.savefig(os.path.join(os.path.dirname(os.path.realpath(__file__)), "figures", "value_price.png"), dpi=300, bbox_inches='tight')
 plt.close()  # Fecha o gráfico atual
 
 # Gráfico 2: Heatmap de Correlação entre as features numéricas
@@ -148,7 +148,7 @@ corr_matrix = df_diamonds[numeric_features].corr()
 plt.figure(figsize=(10, 8))
 sns.heatmap(corr_matrix, annot=True, cmap='coolwarm')
 plt.title("Heatmap de Correlação entre Variáveis")
-plt.savefig("Heatmap.png", dpi=300, bbox_inches='tight')
+plt.savefig(os.path.join(os.path.dirname(os.path.realpath(__file__)), "figures", "Heatmap.png"), dpi=300, bbox_inches='tight')
 plt.close()
 
 # Separando as variáveis preditoras e a variável alvo para modelagem

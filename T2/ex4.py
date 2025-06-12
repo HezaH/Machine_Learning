@@ -172,7 +172,7 @@ plt.xlabel("Número de Componentes (k)")
 plt.ylabel("Acurácia")
 plt.title("Desempenho (Acurácia) em função do número de Componentes (k)")
 plt.grid(True)
-plt.savefig(f'accuracy_k.png')
+plt.savefig(os.path.join(os.path.dirname(os.path.realpath(__file__)), "figures", 'accuracy_k.png'))
 
 # ----------------------------
 # Criação do conjunto D2 utilizando o melhor k

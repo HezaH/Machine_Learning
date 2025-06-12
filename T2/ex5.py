@@ -2,6 +2,7 @@ import os
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import plotly.express as px
 import seaborn as sns
 import time
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes, mark_inset
@@ -88,7 +89,7 @@ plt.xlabel("Valores Reais de z")
 plt.ylabel("Valores Preditos de z")
 plt.title("Comparação entre Valores Reais e Preditos")
 plt.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'r--')
-plt.savefig("compare_z.png", dpi=300, bbox_inches='tight')
+plt.savefig(os.path.join(os.path.dirname(os.path.realpath(__file__)), "figures","compare_z_ex5.png"), dpi=300, bbox_inches='tight')
 plt.close()  # Fecha o gráfico atual
 
 # Se houver registros com z igual a 0, prevê os valores de z para esses registros.
@@ -105,6 +106,19 @@ print(df_diamonds.head())
 
 # Engenharia de features: Adiciona volume e outras derivadas
 df_diamonds['volume'] = df_diamonds['x'] * df_diamonds['y'] * df_diamonds['z']
+
+## Calcula quartis
+Q1 = df_diamonds['volume'].quantile(0.25)  # Primeiro quartil (25%)
+Q3 = df_diamonds['volume'].quantile(0.75)  # Terceiro quartil (75%)
+IQR = Q3 - Q1  # Intervalo interquartil
+
+# Define limites
+limite_inferior = Q1 - 1.5 * IQR
+limite_superior = Q3 + 1.5 * IQR
+
+# Filtra valores dentro do intervalo aceitável
+df_diamonds = df_diamonds[(df_diamonds['volume'] >= limite_inferior) & (df_diamonds['volume'] <= limite_superior)]
+
 df_diamonds["price_per_carat"] = df_diamonds["price"] / df_diamonds["carat"]
 df_diamonds["price_per_volume"] = df_diamonds["price"] / df_diamonds["volume"]
 
@@ -118,24 +132,34 @@ df_diamonds["log_price"] = np.log(df_diamonds["price"])
 if 'Unnamed: 0' in df_diamonds.columns:
     df_diamonds = df_diamonds.drop(columns='Unnamed: 0').reset_index(drop=True)
 
+# Criando o gráfico interativo
+fig = px.scatter(df_diamonds, x="volume", y="price", color="cut",
+                 title="Relação entre Volume e Preço do Diamante")
+
+# Exportando para HTML
+fig.write_html(os.path.join(os.path.dirname(os.path.realpath(__file__)), "figures", "diamantes_interativo.html"))
+
+# Exibir no navegador
+# fig.show()
+
 # Gráfico 1: Relação entre Volume e Preço
-fig, ax = plt.subplots(figsize=(10, 8))
-sns.regplot(x='volume', y='price', data=df_diamonds, scatter_kws={'alpha': 0.4}, ax=ax)
-ax.set_title("Relação entre Volume e Preço do Diamante")
-ax.set_xlabel("Volume (x * y * z)")
-ax.set_ylabel("Preço")
+# fig, ax = plt.subplots(figsize=(10, 8))
+# sns.regplot(x='volume', y='price', data=df_diamonds, scatter_kws={'alpha': 0.4}, ax=ax)
+# ax.set_title("Relação entre Volume e Preço do Diamante")
+# ax.set_xlabel("Volume (x * y * z)")
+# ax.set_ylabel("Preço")
 
 # Cria um inset (subgráfico) com zoom na região desejada
-axins = inset_axes(ax, width="40%", height="40%", loc='lower right',
-                   bbox_to_anchor=(0, 0.2, 1, 1),
-                   bbox_transform=ax.transAxes)
-sns.regplot(x='volume', y='price', data=df_diamonds, scatter_kws={'alpha': 0.4}, ax=axins)
-axins.set_xlim(0, 800)         # Limita o eixo x do inset
-axins.set_ylim(0, 25000)       # Limita o eixo y do inset
-mark_inset(ax, axins, loc1=2, loc2=4, fc="none", ec="0.4")
+# axins = inset_axes(ax, width="40%", height="40%", loc='lower right',
+#                    bbox_to_anchor=(0, 0.2, 1, 1),
+#                    bbox_transform=ax.transAxes)
+# sns.regplot(x='volume', y='price', data=df_diamonds, scatter_kws={'alpha': 0.4}, ax=axins)
+# axins.set_xlim(0, 800)         # Limita o eixo x do inset
+# axins.set_ylim(0, 25000)       # Limita o eixo y do inset
+# mark_inset(ax, axins, loc1=2, loc2=4, fc="none", ec="0.4")
 
-plt.savefig("value_price.png", dpi=300, bbox_inches='tight')
-plt.close()  # Fecha o gráfico atual
+# plt.savefig(os.path.join(os.path.dirname(os.path.realpath(__file__)), "figures", "value_price.png"), dpi=300, bbox_inches='tight')
+# plt.close()  # Fecha o gráfico atual
 
 # Gráfico 2: Heatmap de Correlação entre as features numéricas
 cols = list(df_diamonds.columns)
@@ -148,7 +172,8 @@ corr_matrix = df_diamonds[numeric_features].corr()
 plt.figure(figsize=(10, 8))
 sns.heatmap(corr_matrix, annot=True, cmap='coolwarm')
 plt.title("Heatmap de Correlação entre Variáveis")
-plt.savefig("Heatmap.png", dpi=300, bbox_inches='tight')
+
+plt.savefig(os.path.join(os.path.dirname(os.path.realpath(__file__)), "figures", "Heatmap_ex5.png"), dpi=300, bbox_inches='tight')
 plt.close()
 
 # Separando as variáveis preditoras e a variável alvo para modelagem
@@ -242,7 +267,7 @@ for alpha in [0.15, 0.1, 0.05, 0.01]:
         plt.ylabel("y")
         plt.legend()
         plt.grid(True)
-        plt.savefig(f"figures/conformal_prediction_{alpha}_{col}.png", dpi=300, bbox_inches='tight')
+        plt.savefig(os.path.join(os.path.dirname(os.path.realpath(__file__)), "figures", f"conformal_prediction_{alpha}_{col}.png"), dpi=300, bbox_inches='tight')
         plt.close()
 
 # Finaliza a medição do tempo
