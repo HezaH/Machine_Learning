@@ -1,40 +1,28 @@
 import os
+import time
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-import time
+import plotly.express as px
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes, mark_inset
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler, OrdinalEncoder
+from sklearn.preprocessing import StandardScaler, OneHotEncoder, OrdinalEncoder
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
-from sklearn.neighbors import KNeighborsRegressor
-from sklearn.metrics import (mean_squared_error, r2_score, mean_absolute_error, 
-                             median_absolute_error, mean_squared_log_error, explained_variance_score)
-
-import os
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
-import time
-
-from sklearn.model_selection import train_test_split
-from sklearn.pipeline import Pipeline
-from sklearn.compose import ColumnTransformer
-from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.linear_model import LinearRegression
-from sklearn.metrics import mean_squared_error
+from sklearn.neighbors import KNeighborsRegressor
+from sklearn.metrics import (mean_squared_error, r2_score, mean_absolute_error,
+                             median_absolute_error, mean_squared_log_error, explained_variance_score)
 
 # Inicia a medição do tempo
 start_time = time.time()
-
+out_dir = os.path.dirname(os.path.realpath(__file__))
 # Carrega o dataset
 try:
     df_diamonds = pd.read_csv('diamonds.csv')
 except FileNotFoundError:
-    current_dir = os.path.dirname(os.path.realpath(__file__))
+    current_dir = out_dir
     df_diamonds = pd.read_csv(os.path.join(current_dir, 'diamonds.csv'))
 
 # Para treinar um modelo que prediz z, selecione apenas os registros com z > 0 (valores válidos)
@@ -81,14 +69,40 @@ y_pred = pipeline_model.predict(X_test)
 rmse = np.sqrt(mean_squared_error(y_test, y_pred))
 print(f"RMSE para predição de z: {rmse:.4f}")
 
-# Opcional: visualize a relação entre os valores reais e preditos
-plt.figure(figsize=(8,6))
+# Gráfico 2: Heatmap de Correlação entre as features numéricas
+cols = list(df_diamonds.columns)
+# Definir as features categóricas e a variável alvo
+
+target_column = 'price'
+# Para o heatmap, iremos usar apenas as colunas numéricas (excluindo as categóricas e a target)
+numeric_features = [col for col in cols if col not in categorical_preproc + [target_column]]
+corr_matrix = df_diamonds[numeric_features].corr()
+plt.figure(figsize=(10, 8))
+sns.heatmap(corr_matrix, annot=True, cmap='coolwarm')
+plt.title("Heatmap de Correlação entre Variáveis")
+plt.savefig(os.path.join(out_dir, "figures", "Heatmap.png"), dpi=300, bbox_inches='tight')
+plt.close()
+
+# Gráfico 1: Relação entre Volume e Preço
+fig, ax = plt.subplots(figsize=(10, 8))
 sns.scatterplot(x=y_test, y=y_pred)
-plt.xlabel("Valores Reais de z")
-plt.ylabel("Valores Preditos de z")
-plt.title("Comparação entre Valores Reais e Preditos")
-plt.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'r--')
-plt.savefig(os.path.join(os.path.dirname(os.path.realpath(__file__)), "figures", "compare_z_ex1.png"), dpi=300, bbox_inches='tight')
+ax.set_title("Comparação entre Valores Reais e Preditos")
+ax.set_xlabel("Valores Reais de z")
+ax.set_ylabel("Valores Preditos de z")
+ax.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'r--', label='Linha de Igualdade')
+# Cria um inset (subgráfico) com zoom na região desejada
+axins = inset_axes(ax, width="40%", height="40%", loc='lower right',
+                   bbox_to_anchor=(0, 0.2, 1, 1),
+                   bbox_transform=ax.transAxes)
+
+sns.regplot(x=y_test, y=y_pred, scatter_kws={'alpha': 0.4}, ax=axins)
+axins.set_xlim(min(y_test.min(), y_pred.min()) - 1, min(y_test.max(), y_pred.max()) + 1)         # Limita o eixo x do inset
+axins.set_ylim(min(y_test.min(), y_pred.min()) - 1, min(y_test.max(), y_pred.max()) + 1)       # Limita o eixo y do inset
+axins.set_title("Zoom na Região de Interesse")
+axins.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'r--', label='Linha de Igualdade')
+mark_inset(ax, axins, loc1=2, loc2=4, fc="none", ec="0.4")
+
+plt.savefig(os.path.join(out_dir, "figures", "value_price.png"), dpi=300, bbox_inches='tight')
 plt.close()  # Fecha o gráfico atual
 
 # Se houver registros com z igual a 0, prevê os valores de z para esses registros.
@@ -105,6 +119,19 @@ print(df_diamonds.head())
 
 # Engenharia de features: Adiciona volume e outras derivadas
 df_diamonds['volume'] = df_diamonds['x'] * df_diamonds['y'] * df_diamonds['z']
+
+## Calcula quartis
+Q1 = df_diamonds['volume'].quantile(0.25)  # Primeiro quartil (25%)
+Q3 = df_diamonds['volume'].quantile(0.75)  # Terceiro quartil (75%)
+IQR = Q3 - Q1  # Intervalo interquartil
+
+# Define limites
+limite_inferior = Q1 - 1.5 * IQR
+limite_superior = Q3 + 1.5 * IQR
+
+# Filtra valores dentro do intervalo aceitável
+df_diamonds = df_diamonds[(df_diamonds['volume'] >= limite_inferior) & (df_diamonds['volume'] <= limite_superior)]
+
 df_diamonds["price_per_carat"] = df_diamonds["price"] / df_diamonds["carat"]
 df_diamonds["price_per_volume"] = df_diamonds["price"] / df_diamonds["volume"]
 
@@ -118,38 +145,69 @@ df_diamonds["log_price"] = np.log(df_diamonds["price"])
 if 'Unnamed: 0' in df_diamonds.columns:
     df_diamonds = df_diamonds.drop(columns='Unnamed: 0').reset_index(drop=True)
 
-# Gráfico 1: Relação entre Volume e Preço
-fig, ax = plt.subplots(figsize=(10, 8))
-sns.regplot(x='volume', y='price', data=df_diamonds, scatter_kws={'alpha': 0.4}, ax=ax)
-ax.set_title("Relação entre Volume e Preço do Diamante")
-ax.set_xlabel("Volume (x * y * z)")
-ax.set_ylabel("Preço")
+# Criando o gráfico interativo
+fig = px.scatter(df_diamonds, x="volume", y="price", color="cut",
+                 title="Relação entre Volume e Preço do Diamante")
 
-# Cria um inset (subgráfico) com zoom na região desejada
-axins = inset_axes(ax, width="40%", height="40%", loc='lower right',
-                   bbox_to_anchor=(0, 0.2, 1, 1),
-                   bbox_transform=ax.transAxes)
-sns.regplot(x='volume', y='price', data=df_diamonds, scatter_kws={'alpha': 0.4}, ax=axins)
-axins.set_xlim(0, 800)         # Limita o eixo x do inset
-axins.set_ylim(0, 25000)       # Limita o eixo y do inset
-mark_inset(ax, axins, loc1=2, loc2=4, fc="none", ec="0.4")
+# Exportando para HTML
+fig.write_html(os.path.join(out_dir, "figures", "diamantes_interativo.html"))
 
-plt.savefig(os.path.join(os.path.dirname(os.path.realpath(__file__)), "figures", "value_price.png"), dpi=300, bbox_inches='tight')
-plt.close()  # Fecha o gráfico atual
+# -----------------------------------------------------------
+# 1. PREÇO  ×  PRICE-PER-CARAT   (cores = CUT)
+# -----------------------------------------------------------
+fig = px.scatter(
+    df_diamonds,
+    x="price_per_carat",
+    y="price",
+    color="cut",
+    hover_data=["carat", "color", "clarity"],
+    title="Preço vs. Preço por Quilate (CUT)",
+    labels={
+        "price_per_carat": "Preço / Quilate",
+        "price": "price",
+        "cut": "Cut"
+    },
+)
+fig.update_traces(marker=dict(opacity=0.65, line=dict(width=0.3, color="white")))
+fig.write_html(os.path.join(out_dir, "figures", "price_vs_price_per_carat_cut.html"), include_plotlyjs="cdn")
 
-# Gráfico 2: Heatmap de Correlação entre as features numéricas
-cols = list(df_diamonds.columns)
-# Definir as features categóricas e a variável alvo
+# -----------------------------------------------------------
+# 2. PREÇO  ×  PRICE-PER-VOLUME  (cores = CLARITY)
+# -----------------------------------------------------------
+fig_volume = px.scatter(
+    df_diamonds,
+    x="price_per_volume",
+    y="price",
+    color="clarity",
+    hover_data=["volume", "color", "cut"],
+    title="Preço vs. Preço por Volume (CLARITY)",
+    labels={
+        "price_per_volume": "Preço / Volume",
+        "price": "price",
+        "clarity": "Clarity"
+    },
+)
+fig_volume.update_traces(marker=dict(opacity=0.65, line=dict(width=0.3, color="white")))
+fig_volume.write_html(os.path.join(out_dir, "figures", "price_vs_price_per_volume_clarity.html"), include_plotlyjs="cdn")
 
-target_column = 'price'
-# Para o heatmap, iremos usar apenas as colunas numéricas (excluindo as categóricas e a target)
-numeric_features = [col for col in cols if col not in categorical_preproc + [target_column]]
-corr_matrix = df_diamonds[numeric_features].corr()
-plt.figure(figsize=(10, 8))
-sns.heatmap(corr_matrix, annot=True, cmap='coolwarm')
-plt.title("Heatmap de Correlação entre Variáveis")
-plt.savefig(os.path.join(os.path.dirname(os.path.realpath(__file__)), "figures", "Heatmap.png"), dpi=300, bbox_inches='tight')
-plt.close()
+# -----------------------------------------------------------
+# 3. EXTRA (opcional): RELAÇÃO ENTRE RÁCIOS DE LADOS E PREÇO
+# -----------------------------------------------------------
+fig_ratio = px.scatter(
+    df_diamonds,
+    x="ratio_x_y",
+    y="price",
+    color="color",
+    hover_data=["ratio_x_z", "ratio_y_z", "cut", "clarity"],
+    title="Preço vs. Proporção x/y (COLOR)",
+    labels={
+        "ratio_x_y": "x / y",
+        "price": "price",
+        "color": "Color"
+    },
+)
+fig_ratio.update_traces(marker=dict(opacity=0.65, line=dict(width=0.3, color="white")))
+fig_ratio.write_html(os.path.join(out_dir, "figures", "price_vs_ratio_xy_color.html"), include_plotlyjs="cdn")
 
 # Separando as variáveis preditoras e a variável alvo para modelagem
 X = df_diamonds.drop(target_column, axis=1)
