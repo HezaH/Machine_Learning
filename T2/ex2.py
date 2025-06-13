@@ -199,13 +199,9 @@ for i in range(1, n_threshold + 1):
 ord_pred_labels, ord_pred_numbers = predict_ordinal(df_test, ordinal_classifiers, features)
 
 print("== Modelo Ordinal ==")
-print("Matriz de Confusão (Ordinal):")
-print(confusion_matrix(df_test["categoria"], ord_pred_labels,labels=label_order))
+show_confusion( df_test["categoria"], ord_pred_labels, name_fig = os.path.join(out_dir, "figures", "confusion_matrix_ordinal.png"), labels=label_order, title="Matriz de Confusão – Modelo Ordinal", )
 print("\nClassification Report (Ordinal):")
 print(classification_report(df_test["categoria"], ord_pred_labels,labels= label_order,target_names= label_order,zero_division=0))
-
-#  Modelo Ordinal
-show_confusion( df_test["categoria"], ord_pred_labels, name_fig = os.path.join(out_dir, "figures", "confusion_matrix_ordinal.png"), labels=label_order, title="Matriz de Confusão – Modelo Ordinal", )
 
 # ------------------------------------------------------------------
 # MODELO NOMINAL
@@ -220,13 +216,10 @@ nominal_clf = GradientBoostingClassifier(random_state=42).fit(df_train[features]
 nom_pred_labels = le.inverse_transform(nominal_clf.predict(df_test[features]))
 
 print("== Modelo Nominal ==")
-print("Matriz de Confusão (Nominal):")
-print(confusion_matrix(df_test["categoria"], nom_pred_labels,labels=label_order))
+show_confusion(df_test["categoria"], nom_pred_labels, name_fig = os.path.join(out_dir, "figures", "confusion_matrix_norminal.png"), labels=label_order, title="Matriz de Confusão – Modelo Nominal", )
 print("\nClassification Report (Nominal):")
 print(classification_report( df_test["categoria"], nom_pred_labels, labels = label_order, target_names= label_order, zero_division=0))
 
-# Modelo Nominal
-show_confusion(df_test["categoria"], nom_pred_labels, name_fig = os.path.join(out_dir, "figures", "confusion_matrix_norminal.png"), labels=label_order, title="Matriz de Confusão – Modelo Nominal", )
 
 # Tempo total de execução
 end_time = time.time()
