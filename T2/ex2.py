@@ -6,6 +6,64 @@ import numpy as np
 from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.metrics import confusion_matrix, classification_report
 from sklearn.preprocessing import LabelEncoder
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+# ------------------------------------------------------------------
+def show_confusion( y_true, y_pred, labels, name_fig , title="Matriz de Confusão", plot_heatmap=True, cmap="Blues", figsize=(6, 5), ):
+    """
+    Exibe a matriz de confusão com rótulos nas linhas (reais)
+    e colunas (preditos) na ordem especificada por `labels`.
+
+    Parâmetros
+    ----------
+    y_true : array-like
+        Rótulos reais.
+    y_pred : array-like
+        Rótulos preditos.
+    labels : list
+        Ordem desejada das classes (ex.: ['NONE', 'WEAK', 'MODERATE', 'STRONG']).
+    title : str
+        Título mostrado antes da tabela / heatmap.
+    plot_heatmap : bool
+        Se True, desenha também um heatmap usando seaborn.
+    cmap : str
+        Mapa de cores para o heatmap.
+    figsize : tuple
+        Tamanho da figura do heatmap.
+    """
+    # 1. Matriz numérica
+    cm = confusion_matrix(y_true, y_pred, labels=labels)
+
+    # 2. DataFrame bonito para print
+    df_cm = pd.DataFrame(
+        cm,
+        index=[f"REAL → {lbl}" for lbl in labels],
+        columns=[f"PRED → {lbl}" for lbl in labels],
+    )
+
+    # 3. Print “cru” no console
+    print(f"\n{title}")
+    print(df_cm)
+
+    # 4. Heatmap opcional
+    if plot_heatmap:
+        plt.figure(figsize=figsize)
+        sns.heatmap(
+            df_cm,
+            annot=True,
+            fmt="d",
+            cmap=cmap,
+            cbar=False,
+            linewidths=0.5,
+            linecolor="0.9",
+        )
+        plt.title(title, fontweight="bold")
+        plt.ylabel("Classe Real")
+        plt.xlabel("Classe Predita")
+        plt.tight_layout()
+        plt.savefig(name_fig, dpi=300, bbox_inches='tight')
+        plt.close()
 
 def predict_ordinal(df, classifiers, features):
     preds = []
@@ -122,51 +180,55 @@ n_threshold = len(new_choices_train) - 1  # k - 1, onde k é o número de catego
 exclude_cols = [target, "categoria", "cat_code"] + [f'T_{i+1}' for i in range(n_threshold)]
 features = [col for col in df_train.columns if col not in exclude_cols]
 
-###########################
-# Modelo Ordinal
-###########################
-ordinal_classifiers = []  # Lista para armazenar os modelos treinados
+# ------------------------------------------------------------------
+# ORDEM CANÔNICA DAS CLASSES
+# ------------------------------------------------------------------
+label_order  = list(choices.keys())# ['NONE','WEAK','MODERATE','STRONG']
+out_dir = os.path.dirname(os.path.realpath(__file__))
+# ------------------------------------------------------------------
+# MODELO ORDINAL
+# ------------------------------------------------------------------
+ordinal_classifiers = []
 print("== Treinamento do Modelo Ordinal ==")
 for i in range(1, n_threshold + 1):
     clf = GradientBoostingClassifier(random_state=42)
-    # Aqui, cada target é a coluna T_i (0 ou 1)
-    print(f"Treinando modelo para T_{i}, equiparado a '{list(choices.keys())[i-1]}'")
+    print(f"Treinando modelo para T_{i}, equiparado a '{label_order[i-1]}'")
     clf.fit(df_train[features], df_train[f'T_{i}'])
     ordinal_classifiers.append(clf)
 
-print(f"Modelos treinados: {len(ordinal_classifiers)}")
-
-# Previsão no conjunto de teste usando o modelo ordinal
 ord_pred_labels, ord_pred_numbers = predict_ordinal(df_test, ordinal_classifiers, features)
 
 print("== Modelo Ordinal ==")
 print("Matriz de Confusão (Ordinal):")
-print(confusion_matrix(df_test["categoria"], ord_pred_labels))
+print(confusion_matrix(df_test["categoria"], ord_pred_labels,labels=label_order))
 print("\nClassification Report (Ordinal):")
-print(classification_report(df_test["categoria"], ord_pred_labels))
+print(classification_report(df_test["categoria"], ord_pred_labels,labels= label_order,target_names= label_order,zero_division=0))
 
-###########################
-# Modelo Nominal (Tradicional)
-###########################
-print("== Treinamento do Modelo Nominal ==")
-# Tratando as classes como nominais, usamos a coluna "categoria" e um LabelEncoder.
+#  Modelo Ordinal
+show_confusion( df_test["categoria"], ord_pred_labels, name_fig = os.path.join(out_dir, "figures", "confusion_matrix_ordinal.png"), labels=label_order, title="Matriz de Confusão – Modelo Ordinal", )
+
+# ------------------------------------------------------------------
+# MODELO NOMINAL
+# ------------------------------------------------------------------
+print("\n== Treinamento do Modelo Nominal ==")
 le = LabelEncoder()
 df_train["cat_nominal"] = le.fit_transform(df_train["categoria"])
 df_val["cat_nominal"]   = le.transform(df_val["categoria"])
 df_test["cat_nominal"]  = le.transform(df_test["categoria"])
 
-nominal_clf = GradientBoostingClassifier(random_state=42)
-nominal_clf.fit(df_train[features], df_train["cat_nominal"])
-print("Modelo nominal treinado.")
-nom_pred = nominal_clf.predict(df_test[features])
-nom_pred_labels = le.inverse_transform(nom_pred)
+nominal_clf = GradientBoostingClassifier(random_state=42).fit(df_train[features], df_train["cat_nominal"])
+nom_pred_labels = le.inverse_transform(nominal_clf.predict(df_test[features]))
 
 print("== Modelo Nominal ==")
 print("Matriz de Confusão (Nominal):")
-print(confusion_matrix(df_test["categoria"], nom_pred_labels))
+print(confusion_matrix(df_test["categoria"], nom_pred_labels,labels=label_order))
 print("\nClassification Report (Nominal):")
-print(classification_report(df_test["categoria"], nom_pred_labels))
+print(classification_report( df_test["categoria"], nom_pred_labels, labels = label_order, target_names= label_order, zero_division=0))
+
+# Modelo Nominal
+show_confusion(df_test["categoria"], nom_pred_labels, name_fig = os.path.join(out_dir, "figures", "confusion_matrix_norminal.png"), labels=label_order, title="Matriz de Confusão – Modelo Nominal", )
 
 # Tempo total de execução
 end_time = time.time()
 print(f"Execution time: {end_time - start_time:.2f} seconds")
+
