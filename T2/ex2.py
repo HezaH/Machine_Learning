@@ -19,10 +19,15 @@ def predict_ordinal(df, classifiers, features):
     # Para a primeira classe:
     prob_class0 = 1 - preds[0]
     prob_classes = [prob_class0]
+    
     # Para as classes intermediárias:
     for i in range(1, preds.shape[0]):
+        # A probabilidade da classe i é a diferença entre a probabilidade da classe i-1 e a classe i
+        #preds[i-1] = probabilidade da classe i-1
+        #preds[i] = probabilidade da classe i
         prob = preds[i-1] - preds[i]
         prob_classes.append(prob)
+    
     # Para a última classe:
     prob_class_last = preds[-1]
     prob_classes.append(prob_class_last)
@@ -125,6 +130,7 @@ print("== Treinamento do Modelo Ordinal ==")
 for i in range(1, n_threshold + 1):
     clf = GradientBoostingClassifier(random_state=42)
     # Aqui, cada target é a coluna T_i (0 ou 1)
+    print(f"Treinando modelo para T_{i}, equiparado a '{list(choices.keys())[i-1]}'")
     clf.fit(df_train[features], df_train[f'T_{i}'])
     ordinal_classifiers.append(clf)
 
