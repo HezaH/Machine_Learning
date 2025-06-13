@@ -10,6 +10,19 @@ from sklearn.decomposition import PCA
 import seaborn as sns
 import matplotlib.pyplot as plt
 
+import numpy as np
+import pandas as pd
+from sklearn.decomposition import PCA
+from sklearn.ensemble     import GradientBoostingClassifier
+from sklearn.preprocessing import LabelEncoder, label_binarize
+from sklearn.metrics      import (
+    f1_score,
+    balanced_accuracy_score,
+    average_precision_score,
+    classification_report,
+)
+import plotly.express as px
+
 # ------------------------------------------------------------------
 def show_confusion( y_true, y_pred, labels, name_fig , title="Matriz de Confusão", plot_heatmap=True, cmap="Blues", figsize=(6, 5), ):
     """
@@ -185,56 +198,115 @@ features = [col for col in df_train.columns if col not in exclude_cols]
 
 print(f"Total de features originais usadas: {len(features)}")
 
-# ----------------------------
-# Seleção do melhor k via PCA
-# ----------------------------
+# -------------  hiper-parâmetros --------------------------
+k_candidates  = range(2, min(20, len(features)) + 1)  # 2 … 20  (ou 2 … |features|)
+metric_focus  = "macro_f1"      # métrica que decide o “winner”
+verbose       = True
+# ---------------------------------------------------------
 
-# Defina um range de candidatos para k. Por exemplo, testar de 2 a |features| componentes (ou um range menor)
-k_candidates = list(range(2, min(20, len(features)) + 1))  # usando até 20 ou o número máximo disponível
-
-best_k = None
-best_val_score = -np.inf  # ou 0
-results = {}
-
-# Usaremos o conjunto nominal para avaliação (pode ser adaptado para o ordinal também)
-# Transformando a coluna target nominal via LabelEncoder:
+# =========================================================
+# 1.  TARGET NOMINAL  →  números
+# =========================================================
 le = LabelEncoder()
 df_train["cat_nominal"] = le.fit_transform(df_train["categoria"])
-df_val["cat_nominal"] = le.transform(df_val["categoria"])
+df_val  ["cat_nominal"] = le.transform(df_val ["categoria"])
+classes_int  = np.arange(len(le.classes_))          # [0, 1, 2, 3]
+
+# =========================================================
+# 2.  LOOP SOBRE k  (PCA)  +  MÉTRICAS ROBUSTAS
+# =========================================================
+results = {}
+best_k  = None
+best_score = -np.inf
 
 for k in k_candidates:
-    # Aplica PCA nos dados de treinamento e validação (apenas nas features)
-    pca = PCA(n_components=k)
+    # ---- 2.1 PCA ----------------------------------------
+    pca = PCA(n_components=k, random_state=42)
     X_train_pca = pca.fit_transform(df_train[features])
     X_val_pca   = pca.transform(df_val[features])
-    
-    # Treina um modelo nominal (GradientBoostingClassifier) nos dados transformados
+
+    # ---- 2.2 Modelo -------------------------------------
     clf = GradientBoostingClassifier(random_state=42)
     clf.fit(X_train_pca, df_train["cat_nominal"])
-    
-    # Faz predição no conjunto de validação e calcula a acurácia
-    y_val_pred = clf.predict(X_val_pca)
-    score = accuracy_score(df_val["cat_nominal"], y_val_pred)
-    results[k] = score
-    print(f"k = {k}, Acurácia de Validação = {score:.4f}")
-    
-    if score >= best_val_score:
-        best_val_score = score
-        best_k = k
 
-print(f"\nMelhor k encontrado: {best_k} com acurácia de validação = {best_val_score:.4f}")
+    # ---- 2.3 Predições & Probabilidades -----------------
+    y_val_pred      = clf.predict(X_val_pca)
+    y_val_probas    = clf.predict_proba(X_val_pca)
 
-ks = list(results.keys())
-accuracies = list(results.values())
+    # ---- 2.4 Métricas “amigas da minoria” ---------------
+    macro_f1  = f1_score(
+        df_val["cat_nominal"], y_val_pred, average="macro", zero_division=0
+    )
+    bal_acc   = balanced_accuracy_score(df_val["cat_nominal"], y_val_pred)
 
-# Plota um gráfico de linha com marcadores
-plt.plot(ks, accuracies, marker='o')
+    # AUPRC macro (Precisão-Recall) – sensível ao desequilíbrio
+    y_val_bin     = label_binarize(df_val["cat_nominal"], classes=classes_int)
+    auprc_macro   = average_precision_score(
+        y_val_bin, y_val_probas, average="macro"
+    )
 
-plt.xlabel("Número de Componentes (k)")
-plt.ylabel("Acurácia")
-plt.title("Desempenho (Acurácia) em função do número de Componentes (k)")
-plt.grid(True)
-plt.savefig(os.path.join(os.path.dirname(os.path.realpath(__file__)), "figures", 'accuracy_k.png'))
+    results[k] = {
+        "macro_f1":  macro_f1,
+        "bal_acc":   bal_acc,
+        "auprc":     auprc_macro,
+    }
+
+    # ---- 2.5 Verbose ------------------------------------
+    if verbose:
+        print(
+            f"k={k:2d} | F1_macro={macro_f1:.4f} | "
+            f"BalAcc={bal_acc:.4f} | AUPRC={auprc_macro:.4f}"
+        )
+
+    # ---- 2.6 Escolhe o melhor conforme “metric_focus” ----
+    if results[k][metric_focus] > best_score + 1e-6:
+        best_score = results[k][metric_focus]
+        best_k     = k
+        best_clf   = clf            # guarda também o modelo vencedor
+        best_pca   = pca
+
+# =========================================================
+# 3.  RESUMO DOS RESULTADOS
+# =========================================================
+print("\n===== RESUMO POR k =====")
+res_df = (
+    pd.DataFrame(results)
+    .T.sort_index()
+    .round(4)
+    .rename_axis("k")
+)
+print(res_df)
+
+print(f"\nMelhor k (por {metric_focus})  →  {best_k}  "
+      f"| {metric_focus} = {best_score:.4f}")
+
+# =========================================================
+# 4.  RELATÓRIO DETALHADO DO MELHOR MODELO
+# =========================================================
+print("\n=== Classification report no conjunto de VALIDAÇÃO ===")
+y_val_best_pred = best_clf.predict(best_pca.transform(df_val[features]))
+print(
+    classification_report(
+        df_val["cat_nominal"],
+        y_val_best_pred,
+        target_names=label_order,
+        zero_division=0,
+    )
+)
+
+fig = px.line(
+    res_df.reset_index(),          # vira coluna "k"
+    x="k",
+    y=res_df.columns,              # ['macro_f1','bal_acc','auprc']
+    markers=True,
+    title="Evolução das Métricas vs. Número de Componentes (k)",
+    labels={
+        "k": "Componentes (k)",
+        "value": "Score",
+        "variable": "Métrica",     # vira legenda
+    },
+)
+fig.write_html(os.path.join(out_dir, "figures", "metricas_vs_k.html"), include_plotlyjs="cdn")  # arquivo estático
 
 # ----------------------------
 # Criação do conjunto D2 utilizando o melhor k
