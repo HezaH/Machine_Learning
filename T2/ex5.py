@@ -5,28 +5,14 @@ import matplotlib.pyplot as plt
 import plotly.express as px
 import seaborn as sns
 import time
-from mpl_toolkits.axes_grid1.inset_locator import inset_axes, mark_inset
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler, OrdinalEncoder
+from sklearn.preprocessing import StandardScaler, OrdinalEncoder, OneHotEncoder
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.neighbors import KNeighborsRegressor
+from sklearn.linear_model import LinearRegression
 from sklearn.metrics import (mean_squared_error, r2_score, mean_absolute_error, 
                              median_absolute_error, mean_squared_log_error, explained_variance_score)
-
-import os
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
-import time
-
-from sklearn.model_selection import train_test_split
-from sklearn.pipeline import Pipeline
-from sklearn.compose import ColumnTransformer
-from sklearn.preprocessing import StandardScaler, OneHotEncoder
-from sklearn.linear_model import LinearRegression
-from sklearn.metrics import mean_squared_error
 
 # Inicia a medição do tempo
 start_time = time.time()
@@ -138,28 +124,6 @@ fig = px.scatter(df_diamonds, x="volume", y="price", color="cut",
 
 # Exportando para HTML
 fig.write_html(os.path.join(os.path.dirname(os.path.realpath(__file__)), "figures", "diamantes_interativo.html"))
-
-# Exibir no navegador
-# fig.show()
-
-# Gráfico 1: Relação entre Volume e Preço
-# fig, ax = plt.subplots(figsize=(10, 8))
-# sns.regplot(x='volume', y='price', data=df_diamonds, scatter_kws={'alpha': 0.4}, ax=ax)
-# ax.set_title("Relação entre Volume e Preço do Diamante")
-# ax.set_xlabel("Volume (x * y * z)")
-# ax.set_ylabel("Preço")
-
-# Cria um inset (subgráfico) com zoom na região desejada
-# axins = inset_axes(ax, width="40%", height="40%", loc='lower right',
-#                    bbox_to_anchor=(0, 0.2, 1, 1),
-#                    bbox_transform=ax.transAxes)
-# sns.regplot(x='volume', y='price', data=df_diamonds, scatter_kws={'alpha': 0.4}, ax=axins)
-# axins.set_xlim(0, 800)         # Limita o eixo x do inset
-# axins.set_ylim(0, 25000)       # Limita o eixo y do inset
-# mark_inset(ax, axins, loc1=2, loc2=4, fc="none", ec="0.4")
-
-# plt.savefig(os.path.join(os.path.dirname(os.path.realpath(__file__)), "figures", "value_price.png"), dpi=300, bbox_inches='tight')
-# plt.close()  # Fecha o gráfico atual
 
 # Gráfico 2: Heatmap de Correlação entre as features numéricas
 cols = list(df_diamonds.columns)
