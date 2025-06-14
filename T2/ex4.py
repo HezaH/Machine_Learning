@@ -163,7 +163,6 @@ with open(current_dir, 'rb') as f:
 print(f"Shapes: {X_train.shape}, {X_test.shape}, {X_val.shape}")
 
 target = 'target'
-scoring_type = 'accuracy'  # ou 'f1', 'precision', 'recall'
 
 # Converte os arrays para DataFrames: concatena as features e o target
 df_train = pd.concat([
