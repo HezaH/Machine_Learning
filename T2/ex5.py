@@ -137,7 +137,10 @@ plt.figure(figsize=(10, 8))
 sns.heatmap(corr_matrix, annot=True, cmap='coolwarm')
 plt.title("Heatmap de Correlação entre Variáveis")
 
-plt.savefig(os.path.join(os.path.dirname(os.path.realpath(__file__)), "figures", "Heatmap_ex5.png"), dpi=300, bbox_inches='tight')
+try:
+    plt.savefig(os.path.join(os.path.dirname(os.path.realpath(__file__)), "figures", "Heatmap_ex5.png"), dpi=300, bbox_inches='tight')
+except:
+    plt.show()
 plt.close()
 
 # Separando as variáveis preditoras e a variável alvo para modelagem
@@ -178,61 +181,96 @@ pipeline_model.fit(X_train, y_train)
 y_calib_pred = pipeline_model.predict(X_calib)
 residuals = np.abs(y_calib - y_calib_pred)
 
-for alpha in [0.15, 0.1, 0.05, 0.01]:
-    # 4. Define quantile threshold for 90% prediction interval
-    q = np.quantile(residuals, 1 - alpha)
-    
-    # 5. Predict on test set with prediction intervals
-    y_test_pred = pipeline_model.predict(X_test)
-    y_lower = y_test_pred - q
-    y_upper = y_test_pred + q
 
-    # Calcula as métricas de avaliação
-    rmse = np.sqrt(mean_squared_error(y_test, y_test_pred))
-    r2 = r2_score(y_test, y_test_pred)
-    mae = mean_absolute_error(y_test, y_test_pred)
-    median_ae = median_absolute_error(y_test, y_test_pred)
-    msle = mean_squared_log_error(y_test, y_test_pred)
-    evs = explained_variance_score(y_test, y_test_pred)
-    n = len(y_test)
-    p = X_test.shape[1]
-    adjusted_r2 = 1 - (1 - r2) * (n - 1) / (n - p - 1)
-    mape = np.mean(np.abs((y_test - y_test_pred) / y_test)) * 100
+# 1) pré-compute predições e residuals na CALIBRAÇÃO
+y_calib_pred = pipeline_model.predict(X_calib)
+residuals    = np.abs(y_calib - y_calib_pred)
 
-    print("KNeighborsRegressor (n_neighbors=5)")
-    print(f"RMSE: {rmse:.4f}")
-    print(f"R²: {r2:.4f}")
-    print(f"MAE: {mae:.4f}")
-    print(f"Median Absolute Error: {median_ae:.4f}")
-    print(f"MSLE: {msle:.4f}")
-    print(f"Explained Variance Score: {evs:.4f}")
-    print(f"Adjusted R²: {adjusted_r2:.4f}")
-    print(f"MAPE: {mape:.2f}%")
+# 2) predições no TESTE (só uma vez!)
+y_test_pred = pipeline_model.predict(X_test)
 
-    # 6. Plot results
-    preprocessor = pipeline_model.named_steps["preprocessor"]
+# 3) defina os níveis de confiança que quer checar
+alphas = [0.15, 0.10, 0.05, 0.01]  # para 85%, 90%, 95%, 99% de “coverage”
 
-    # Obtenha os nomes das features após a transformação
-    feature_names = preprocessor.get_feature_names_out()
+# 4) rodar para cada α, mas sem refazer predict() ou métricas comuns
+results = []
+n = len(y_test)
+for alpha in alphas:
+    q      = np.quantile(residuals, 1 - alpha)  # conformal score
+    lower  = y_test_pred - q
+    upper  = y_test_pred + q
 
-    # Transforme os dados de X_test com o pré-processador
-    X_transformed = preprocessor.transform(X_test)
+    # cobertura empírica
+    inside = (y_test >= lower) & (y_test <= upper)
+    picp   = inside.mean()        # PICP = % realmente dentro do intervalo
+    mpiw   = np.mean(upper - lower)  # MPIW = largura média do intervalo
 
-    # Converta o resultado em um DataFrame para facilitar a plotagem
-    df_features = pd.DataFrame(X_transformed, columns=feature_names)
-    # Agora, para cada coluna, crie um gráfico (por exemplo, um histograma)
-    for col in df_features.columns:
-        plt.figure(figsize=(8, 6))
-        plt.scatter(df_features[col], y_test, color='blue', label='True')
-        plt.plot(df_features[col], y_test_pred, color='black', label='Prediction')
-        plt.fill_between(df_features[col], y_lower, y_upper, color='orange', alpha=0.3, label='90% Prediction Interval')
-        plt.title("Conformal Prediction Interval (Regression)")
-        plt.xlabel("Índice do exemplo")
-        plt.ylabel("y")
-        plt.legend()
-        plt.grid(True)
-        plt.savefig(os.path.join(os.path.dirname(os.path.realpath(__file__)), "figures", f"conformal_prediction_{alpha}_{col}.png"), dpi=300, bbox_inches='tight')
-        plt.close()
+    results.append({
+        "alpha": alpha,
+        "conf_level": 1 - alpha,
+        "PICP": picp,
+        "MPIW": mpiw,
+    })
+
+# 5) concatena num DataFrame e plota cobertura vs nominal
+df_cov = pd.DataFrame(results)
+
+print("\n=== Cobertura dos Intervalos ===")
+# display(df_cov.set_index("conf_level").round(4))
+
+plt.figure(figsize=(6,4))
+plt.plot(df_cov["conf_level"], df_cov["PICP"], "o-", label="empírica")
+plt.plot([0,1],[0,1],"--", color="gray", label="ideal")
+plt.xlabel("Nível de confiança nominal")
+plt.ylabel("Cobertura observada (PICP)")
+plt.title("Validação de Conformal Prediction")
+plt.legend()
+plt.grid(True)
+plt.show()
+
+# 6) Métricas pontuais do modelo (não dependem de α)
+rmse = np.sqrt(mean_squared_error(y_test, y_test_pred))
+r2   = r2_score(y_test, y_test_pred)
+mae  = mean_absolute_error(y_test, y_test_pred)
+mdae = median_absolute_error(y_test, y_test_pred)
+msle = mean_squared_log_error(y_test, y_test_pred)
+evs  = explained_variance_score(y_test, y_test_pred)
+n, p = n, X_test.shape[1]
+adj_r2 = 1 - (1 - r2)*(n-1)/(n-p-1)
+mape   = np.mean(np.abs((y_test - y_test_pred)/y_test))*100
+
+print("\n=== Métricas do modelo (ponto estimado) ===")
+print(f"RMSE: {rmse:.4f}    R²: {r2:.4f}    Adj R²: {adj_r2:.4f}")
+print(f"MAE: {mae:.4f}    MdAE: {mdae:.4f}    MAPE: {mape:.2f}%")
+print(f"MSLE: {msle:.4f}    ExplainedVar: {evs:.4f}")
+
+# 7) Gráfico final: verdade vs predito + 95% PI (exemplo)
+for alpha in alphas:
+    q     = np.quantile(residuals, 1 - alpha)
+    lower = y_test_pred - q
+    upper = y_test_pred + q
+
+    plt.figure(figsize=(8,6))
+    plt.scatter(y_test, y_test_pred, s=20, alpha=0.6, label="pontos")
+    plt.plot([y_test.min(), y_test.max()],
+            [y_test.min(), y_test.max()],
+            "--", color="gray", label="identidade")
+    # barras verticais para alguns pontos aleatórios
+    idx = np.random.choice(n, size=100, replace=False)
+    y_true = y_test.to_numpy()      # ou y_test.values
+    lower  = np.asarray(lower)
+    upper  = np.asarray(upper)
+
+    for i in idx:
+        plt.vlines(y_true[i], lower[i], upper[i],
+                color="orange", alpha=0.3)
+
+    plt.xlabel("y verdadeiro")
+    plt.ylabel("y predito")
+    plt.title(f"Predito vs Real com {(1-alpha)*100}% Prediction Interval")
+    plt.legend()
+    plt.grid(True)
+    plt.show()
 
 # Finaliza a medição do tempo
 end_time = time.time()
